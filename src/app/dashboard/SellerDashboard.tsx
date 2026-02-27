@@ -6,59 +6,123 @@ import Link from 'next/link';
 import {
     Loader2, PlusCircle, Store, Package, TrendingUp, DollarSign,
     Gavel, Clock, CheckCircle, XCircle, Eye, MoreVertical,
-    ArrowUpRight, AlertCircle, Coins
+    ArrowUpRight, AlertCircle, Coins, Shield, Percent, Calendar,
+    ChevronDown, Users, Award, Lock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function SellerDashboard() {
     const { data: session } = useSession();
+    const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [sellerData, setSellerData] = useState<any>(null);
-    const [showCreateForm, setShowCreateForm] = useState(false);
-
-    // Form states
-    const [title, setTitle] = useState('');
-    const [desc, setDesc] = useState('');
-    const [price, setPrice] = useState('');
-    const [days, setDays] = useState('7');
     const [creating, setCreating] = useState(false);
-    const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+    const [showCreateForm, setShowCreateForm] = useState(false);
+    const [editingItemId, setEditingItemId] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'all'>('active');
 
-    const fetchData = () => {
-        fetch('/api/seller/items')
-            .then(r => r.json())
-            .then(data => { if (!data.error) setSellerData(data); setLoading(false); })
-            .catch(() => setLoading(false));
-    };
+    // Form state
+    const [form, setForm] = useState({
+        title: '', description: '', startingPrice: '',
+        securityPercentage: '5', category: 'General',
+        duration: '24', // hours
+    });
+    const [uploadedImages, setUploadedImages] = useState<string[]>([]);
 
     useEffect(() => { fetchData(); }, []);
 
-    const handleCreate = async (e: React.FormEvent) => {
+    const fetchData = async () => {
+        try {
+            const res = await fetch(`/api/items?sellerId=${(session?.user as any)?.id}`);
+            const data = await res.json();
+            setItems(Array.isArray(data) ? data : []);
+        } catch { }
+        setLoading(false);
+    };
+
+    const handleOpenCreateForm = () => {
+        setForm({ title: '', description: '', startingPrice: '', securityPercentage: '5', category: 'General', duration: '24' });
+        setUploadedImages([]);
+        setEditingItemId(null);
+        setShowCreateForm(!showCreateForm);
+    };
+
+    const handleEditClick = (item: any) => {
+        setForm({
+            title: item.title,
+            description: item.description,
+            startingPrice: item.startingPrice?.toString() || '',
+            securityPercentage: item.securityPercentage?.toString() || '5',
+            category: item.category || 'General',
+            duration: '24' // Default for now
+        });
+        setUploadedImages(item.images || []);
+        setEditingItemId(item._id);
+        setShowCreateForm(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!form.title || !form.description || !form.startingPrice) {
+            return toast.error('Fill all required fields');
+        }
         setCreating(true);
         try {
+            const now = new Date();
+            const endDate = new Date(now.getTime() + parseInt(form.duration) * 60 * 60 * 1000);
+
+            const payload: any = {
+                title: form.title,
+                description: form.description,
+                startingPrice: parseFloat(form.startingPrice),
+                securityPercentage: parseFloat(form.securityPercentage),
+                category: form.category,
+                images: uploadedImages,
+            };
+
+            if (editingItemId) {
+                payload.itemId = editingItemId;
+                // Only send new dates if they explicitly want to change them, but for now we'll update it
+                payload.endDate = endDate.toISOString();
+            } else {
+                payload.startDate = now.toISOString();
+                payload.endDate = endDate.toISOString();
+            }
+
             const res = await fetch('/api/items', {
+                method: editingItemId ? 'PATCH' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            toast.success(editingItemId ? 'Auction updated!' : 'Auction created!');
+            setForm({ title: '', description: '', startingPrice: '', securityPercentage: '5', category: 'General', duration: '24' });
+            setUploadedImages([]);
+            setEditingItemId(null);
+            setShowCreateForm(false);
+            fetchData();
+        } catch (err: any) {
+            toast.error(err.message);
+        }
+        setCreating(false);
+    };
+
+    const handleCloseAuction = async (itemId: string) => {
+        if (!confirm('Are you sure you want to close this auction? This will declare the winner and refund losing bidders.')) return;
+        try {
+            const res = await fetch('/api/auctions/complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title,
-                    description: desc,
-                    startingPrice: parseInt(price, 10),
-                    startDate: new Date(),
-                    endDate: new Date(Date.now() + parseInt(days, 10) * 86400000),
-                }),
+                body: JSON.stringify({ itemId }),
             });
-            if (res.ok) {
-                toast.success('Auction created successfully!');
-                setTitle(''); setDesc(''); setPrice(''); setDays('7');
-                setShowCreateForm(false);
-                fetchData();
-            } else {
-                const data = await res.json();
-                toast.error(data.error || 'Failed to create auction');
-            }
-        } catch { toast.error('Error creating auction'); }
-        setCreating(false);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            toast.success(`Auction completed! ${data.winner ? 'Winner declared.' : 'No winner (no bids).'}`);
+            fetchData();
+        } catch (err: any) {
+            toast.error(err.message);
+        }
     };
 
     if (loading) {
@@ -69,278 +133,321 @@ export default function SellerDashboard() {
         );
     }
 
-    const stats = sellerData?.stats || { totalListings: 0, activeListings: 0, completedListings: 0, totalEarnings: 0, totalBidsOnItems: 0 };
-    const items = sellerData?.items || [];
+    const activeItems = items.filter(i => i.status === 'Active' && new Date(i.endDate) > new Date());
+    const completedItems = items.filter(i => i.status === 'Completed' || (i.status === 'Active' && new Date(i.endDate) <= new Date()));
+    const totalRevenue = completedItems.reduce((sum, i) => sum + (i.finalAmount || i.currentPrice || 0), 0);
+    const totalBids = items.reduce((sum, i) => sum + (i.bidCount || 0), 0);
 
-    const filteredItems = items.filter((item: any) => {
-        const isActive = item.status === 'Active' && new Date(item.endDate) > new Date();
-        if (filter === 'active') return isActive;
-        if (filter === 'completed') return !isActive;
-        return true;
-    });
+    const filteredItems = activeTab === 'active' ? activeItems : activeTab === 'completed' ? completedItems : items;
+
+    const formatDate = (d: string) => {
+        const date = new Date(d);
+        return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) +
+            ' ' + date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    };
 
     return (
-        <div className="animate-fade-in" style={{ maxWidth: '1100px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '28px' }}>
-
-            {/* Page Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                    <div style={{
-                        width: '48px', height: '48px', borderRadius: '14px',
-                        background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: '0 4px 16px rgba(245,158,11,0.3)',
-                    }}>
-                        <Store style={{ width: 24, height: 24, color: '#fff' }} />
-                    </div>
-                    <div>
-                        <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                            Seller Dashboard
-                        </h1>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                            Welcome, {session?.user?.name || 'Seller'} — manage your auction listings
-                        </p>
-                    </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                    <h1 style={{ fontSize: '1.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Store size={28} style={{ color: 'var(--accent)' }} />
+                        Seller Dashboard
+                    </h1>
+                    <p style={{ color: 'var(--text-muted)', marginTop: '4px' }}>Manage your auctions</p>
                 </div>
-                <button
-                    onClick={() => setShowCreateForm(!showCreateForm)}
-                    className="btn-primary"
-                    style={{ padding: '10px 24px', fontSize: '0.9rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                >
-                    <PlusCircle style={{ width: 16, height: 16 }} />
-                    {showCreateForm ? 'Close' : 'New Auction'}
+                <button className="btn-primary" onClick={handleOpenCreateForm}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <PlusCircle size={18} />
+                    {showCreateForm ? 'Cancel' : 'Create Auction'}
                 </button>
             </div>
 
-            {/* Stats Row */}
-            <div className="dash-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            {/* Create Auction Form */}
+            {showCreateForm && (
+                <div className="card animate-slide-up" style={{ padding: '28px' }}>
+                    <h3 style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <PlusCircle size={20} style={{ color: 'var(--accent)' }} />
+                        {editingItemId ? 'Edit Auction' : 'New Auction'}
+                    </h3>
+                    <form onSubmit={handleSubmit}>
+                        <div className="seller-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                            <div>
+                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                                    Product Name *
+                                </label>
+                                <input className="input-field" value={form.title}
+                                    onChange={e => setForm({ ...form, title: e.target.value })}
+                                    placeholder="e.g. Hero's Leather Jacket from Pushpa 2" required />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                                    Category
+                                </label>
+                                <select className="input-field" value={form.category}
+                                    onChange={e => setForm({ ...form, category: e.target.value })}>
+                                    <option value="General">General</option>
+                                    <option value="Clothing">Clothing</option>
+                                    <option value="Vehicles">Vehicles</option>
+                                    <option value="Accessories">Accessories</option>
+                                    <option value="Props">Props</option>
+                                    <option value="Memorabilia">Memorabilia</option>
+                                </select>
+                            </div>
+                            <div style={{ gridColumn: '1 / -1' }}>
+                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                                    Description *
+                                </label>
+                                <textarea className="input-field" value={form.description}
+                                    onChange={e => setForm({ ...form, description: e.target.value })}
+                                    placeholder="Describe the item in detail..."
+                                    rows={3} required style={{ resize: 'vertical' }} />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                                    <DollarSign size={14} /> Base Price (₹) *
+                                </label>
+                                <input type="number" className="input-field" value={form.startingPrice}
+                                    onChange={e => setForm({ ...form, startingPrice: e.target.value })}
+                                    placeholder="e.g. 5000" min="1" required />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                                    <Percent size={14} /> Security Deposit (%) *
+                                </label>
+                                <input type="number" className="input-field" value={form.securityPercentage}
+                                    onChange={e => setForm({ ...form, securityPercentage: e.target.value })}
+                                    placeholder="e.g. 5" min="1" max="50" required />
+                                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                    Base Deposit Amount: <strong style={{ color: 'var(--accent)' }}>₹{form.startingPrice ? Math.ceil(parseInt(form.startingPrice) * (parseInt(form.securityPercentage || '0') / 100)).toLocaleString() : '0'}</strong>
+                                </p>
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                                    <Clock size={14} /> Duration (hours)
+                                </label>
+                                <select className="input-field" value={form.duration}
+                                    onChange={e => setForm({ ...form, duration: e.target.value })}>
+                                    <option value="1">1 Hour</option>
+                                    <option value="6">6 Hours</option>
+                                    <option value="12">12 Hours</option>
+                                    <option value="24">24 Hours</option>
+                                    <option value="48">2 Days</option>
+                                    <option value="72">3 Days</option>
+                                    <option value="168">7 Days</option>
+                                </select>
+                            </div>
+                            <div style={{ gridColumn: '1 / -1' }}>
+                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                                    Upload Images (Max 3)
+                                </label>
+                                <input type="file" multiple accept="image/*" className="input-field"
+                                    onChange={(e) => {
+                                        const files = Array.from(e.target.files || []).slice(0, 3);
+                                        const newImages: string[] = [];
+                                        let count = 0;
+                                        files.forEach(file => {
+                                            const reader = new FileReader();
+                                            reader.onloadend = () => {
+                                                newImages.push(reader.result as string);
+                                                count++;
+                                                if (count === files.length) {
+                                                    setUploadedImages(prev => [...prev, ...newImages].slice(0, 3));
+                                                }
+                                            };
+                                            reader.readAsDataURL(file);
+                                        });
+                                    }} />
+                                {uploadedImages.length > 0 && (
+                                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                                        {uploadedImages.map((img, idx) => (
+                                            <div key={idx} style={{ position: 'relative', width: '80px', height: '80px' }}>
+                                                <img src={img} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px', background: '#000' }} />
+                                                <button type="button" onClick={() => setUploadedImages(prev => prev.filter((_, i) => i !== idx))}
+                                                    style={{ position: 'absolute', top: -5, right: -5, background: 'var(--danger)', color: 'white', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer', fontSize: '10px' }}>
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Preview */}
+                        {form.startingPrice && form.securityPercentage && (
+                            <div style={{
+                                marginTop: '16px', padding: '14px', borderRadius: '12px',
+                                background: 'var(--accent-soft)', display: 'flex', flexDirection: 'column', gap: '8px',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-text)', fontSize: '0.82rem' }}>
+                                    <Shield size={14} />
+                                    <span><strong>Dynamic Deposit System Enabled:</strong></span>
+                                </div>
+                                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                    <li>Initial Deposit (at Base Price): <strong>₹{Math.ceil(parseInt(form.startingPrice) * parseInt(form.securityPercentage) / 100).toLocaleString()}</strong></li>
+                                    <li>Deposit required doubles dynamically as the winning bid crosses 2x thresholds up to ₹80,000.</li>
+                                    <li>Above ₹80,000, it switches to a flat increase, adding <strong>{form.securityPercentage}%</strong> extra for every ₹10,000 stepped in the bid!</li>
+                                </ul>
+                            </div>
+                        )}
+
+                        <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                            <button type="button" className="btn-secondary" onClick={() => setShowCreateForm(false)}>Cancel</button>
+                            <button type="submit" className="btn-primary" disabled={creating}>
+                                {creating ? <Loader2 size={16} className="animate-spin" /> : editingItemId ? 'Update Auction' : 'Publish Auction'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* Stats */}
+            <div className="dash-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                 {[
-                    { label: 'Total Listings', value: stats.totalListings, icon: Package, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-                    { label: 'Active', value: stats.activeListings, icon: Clock, color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
-                    { label: 'Completed', value: stats.completedListings, icon: CheckCircle, color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-                    { label: 'Bids Received', value: stats.totalBidsOnItems, icon: Gavel, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-                    { label: 'Total Earnings', value: `₹${stats.totalEarnings.toLocaleString()}`, icon: DollarSign, color: '#ec4899', bg: 'rgba(236,72,153,0.1)' },
-                ].map((s, i) => (
-                    <div key={i} className="card" style={{ padding: '22px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    { label: 'Active Auctions', value: activeItems.length, icon: <Package size={20} />, color: 'var(--accent)' },
+                    { label: 'Completed', value: completedItems.length, icon: <CheckCircle size={20} />, color: 'var(--success)' },
+                    { label: 'Total Bids', value: totalBids, icon: <Gavel size={20} />, color: '#ec4899' },
+                    { label: 'Revenue', value: `₹${totalRevenue.toLocaleString()}`, icon: <TrendingUp size={20} />, color: 'var(--warning)' },
+                ].map((stat, i) => (
+                    <div key={i} className="card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
                         <div style={{
-                            width: '44px', height: '44px', borderRadius: '12px',
-                            background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: 44, height: 44, borderRadius: '12px',
+                            background: `${stat.color}18`, display: 'flex',
+                            alignItems: 'center', justifyContent: 'center', color: stat.color,
                         }}>
-                            <s.icon style={{ width: 22, height: 22, color: s.color }} />
+                            {stat.icon}
                         </div>
                         <div>
-                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                {s.label}
-                            </div>
-                            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                                {s.value}
-                            </div>
+                            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500 }}>{stat.label}</p>
+                            <p style={{ fontSize: '1.25rem', fontWeight: 800 }}>{stat.value}</p>
                         </div>
                     </div>
                 ))}
             </div>
 
-            {/* Create Auction Form */}
-            {showCreateForm && (
-                <div className="card" style={{ padding: '32px', animation: 'fadeSlideIn 0.3s ease' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '28px' }}>
-                        <div style={{
-                            width: '36px', height: '36px', borderRadius: '10px',
-                            background: 'rgba(245,158,11,0.1)', color: '#f59e0b',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                            <PlusCircle style={{ width: 20, height: 20 }} />
-                        </div>
-                        <div>
-                            <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>Create New Auction</h2>
-                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>List a movie memorabilia item for bidding</p>
-                        </div>
-                    </div>
+            {/* Tab Filters */}
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-primary)', paddingBottom: '12px' }}>
+                {(['active', 'completed', 'all'] as const).map(tab => (
+                    <button key={tab} onClick={() => setActiveTab(tab)} style={{
+                        padding: '8px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                        fontWeight: 600, fontSize: '0.82rem',
+                        background: activeTab === tab ? 'var(--accent)' : 'transparent',
+                        color: activeTab === tab ? '#fff' : 'var(--text-muted)',
+                        transition: 'all 0.2s',
+                    }}>
+                        {tab === 'active' ? `Active (${activeItems.length})` :
+                            tab === 'completed' ? `Completed (${completedItems.length})` :
+                                `All (${items.length})`}
+                    </button>
+                ))}
+            </div>
 
-                    <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '600px' }}>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                                Item Title
-                            </label>
-                            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} required
-                                className="input-field focus-ring" placeholder="Ex: Tom Cruise's jacket from Mission Impossible" />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                                Description
-                            </label>
-                            <textarea value={desc} onChange={(e) => setDesc(e.target.value)} required rows={3}
-                                className="input-field focus-ring" placeholder="Detailed description of the memorabilia..."
-                                style={{ resize: 'vertical', minHeight: '80px' }} />
-                        </div>
-                        <div className="seller-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                                    Starting Price (₹)
-                                </label>
-                                <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} required min={1}
-                                    className="input-field focus-ring" />
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                                    Duration (Days)
-                                </label>
-                                <input type="number" value={days} onChange={(e) => setDays(e.target.value)} required min={1}
-                                    className="input-field focus-ring" />
-                            </div>
-                        </div>
-                        <button type="submit" disabled={creating} className="btn-primary" style={{ alignSelf: 'start', padding: '12px 32px' }}>
-                            {creating ? <Loader2 style={{ width: 18, height: 18 }} className="animate-spin" /> : 'Create Auction'}
-                        </button>
-                    </form>
+            {/* Auction List */}
+            {filteredItems.length === 0 ? (
+                <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
+                    <AlertCircle size={32} style={{ color: 'var(--text-muted)', marginBottom: '12px' }} />
+                    <p style={{ color: 'var(--text-muted)' }}>No auctions found.</p>
                 </div>
-            )}
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {filteredItems.map((item: any) => {
+                        const isActive = item.status === 'Active' && new Date(item.endDate) > new Date();
+                        const isEnded = new Date(item.endDate) <= new Date() && item.status !== 'Completed';
+                        const timeLeft = new Date(item.endDate).getTime() - Date.now();
+                        const hoursLeft = Math.max(0, Math.floor(timeLeft / (1000 * 60 * 60)));
+                        const minsLeft = Math.max(0, Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60)));
 
-            {/* My Listings */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                {/* Header + Filter */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '24px 24px 0', flexWrap: 'wrap', gap: '12px' }}>
-                    <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>My Listings</h2>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                        {(['all', 'active', 'completed'] as const).map((f) => (
-                            <button
-                                key={f}
-                                onClick={() => setFilter(f)}
-                                style={{
-                                    padding: '6px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                                    fontSize: '0.8rem', fontWeight: 700, textTransform: 'capitalize',
-                                    background: filter === f ? 'var(--accent-soft)' : 'transparent',
-                                    color: filter === f ? 'var(--accent-text)' : 'var(--text-muted)',
-                                    transition: 'all 0.2s',
-                                }}
-                            >
-                                {f}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                        return (
+                            <div key={item._id} className="card" style={{ padding: '20px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
 
-                <div style={{ padding: '20px 24px 24px' }}>
-                    {filteredItems.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {filteredItems.map((item: any) => {
-                                const isActive = item.status === 'Active' && new Date(item.endDate) > new Date();
-                                return (
-                                    <div
-                                        key={item._id}
-                                        style={{
-                                            display: 'flex', flexDirection: 'column',
-                                            borderRadius: '14px',
-                                            background: 'var(--bg-input)', border: '1px solid var(--border-primary)',
-                                            transition: 'border-color 0.2s', overflow: 'hidden'
-                                        }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-primary)'; }}
-                                    >
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0 }}>
-                                                <div style={{
-                                                    width: '48px', height: '48px', borderRadius: '12px',
-                                                    background: 'linear-gradient(135deg, var(--gradient-hero-1), var(--gradient-hero-2))',
-                                                    flexShrink: 0,
-                                                }} />
-                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                        {item.title}
-                                                    </div>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
-                                                        <span className={isActive ? 'badge-success' : 'badge-danger'} style={{ fontSize: '0.7rem', padding: '3px 8px' }}>
-                                                            {isActive ? '● Live' : '● Ended'}
-                                                        </span>
-                                                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                                            {isActive ? `Ends ${new Date(item.endDate).toLocaleDateString()}` : `Ended ${new Date(item.endDate).toLocaleDateString()}`}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                                <div style={{ textAlign: 'right' }}>
-                                                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                                                        {!isActive && item.highestBidder ? 'Winning Bid' : 'Current'}
-                                                    </div>
-                                                    <div style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                        <Coins style={{ width: 14, height: 14, color: 'var(--accent-text)' }} />
-                                                        ₹{item.currentPrice.toLocaleString()}
-                                                    </div>
-                                                </div>
-                                                <Link
-                                                    href={`/auctions/${item._id}`}
-                                                    style={{
-                                                        width: '38px', height: '38px', borderRadius: '10px',
-                                                        background: 'var(--accent-soft)', color: 'var(--accent-text)',
-                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                        textDecoration: 'none', transition: 'background 0.2s',
-                                                    }}
-                                                >
-                                                    <Eye style={{ width: 16, height: 16 }} />
-                                                </Link>
-                                            </div>
-                                        </div>
-
-                                        {/* Winner Details Section */}
-                                        {!isActive && item.highestBidder && (
-                                            <div style={{
-                                                padding: '16px 18px',
-                                                borderTop: '1px solid var(--border-primary)',
-                                                background: 'var(--bg-card-hover)',
-                                                display: 'flex', flexDirection: 'column', gap: '12px'
-                                            }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <CheckCircle style={{ width: 16, height: 16, color: 'var(--success)' }} />
-                                                    <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>Winner Information</h4>
-                                                </div>
-                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', fontSize: '0.85rem' }}>
-                                                    <div>
-                                                        <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px', fontSize: '0.75rem' }}>Name</span>
-                                                        <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{item.highestBidder.name || 'N/A'}</span>
-                                                    </div>
-                                                    <div>
-                                                        <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px', fontSize: '0.75rem' }}>Mobile</span>
-                                                        <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{item.highestBidder.phone ? `+91 ${item.highestBidder.phone}` : 'N/A'}</span>
-                                                    </div>
-                                                    <div style={{ gridColumn: '1 / -1' }}>
-                                                        <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px', fontSize: '0.75rem' }}>Shipping Address</span>
-                                                        <span style={{ color: 'var(--text-secondary)', lineHeight: '1.5', display: 'block' }}>
-                                                            {item.highestBidder.address ? (
-                                                                <>
-                                                                    {item.highestBidder.address}<br />
-                                                                    {item.highestBidder.city}, {item.highestBidder.state} - {item.highestBidder.pincode}
-                                                                </>
-                                                            ) : 'No address provided'}
-                                                        </span>
-                                                    </div>
-                                                </div>
+                                    {/* Thumbnail Image */}
+                                    <div style={{ width: '100px', height: '100px', borderRadius: '12px', overflow: 'hidden', flexShrink: 0, background: '#0a0a0a', border: '1px solid var(--border-primary)' }}>
+                                        {item.images && item.images.length > 0 ? (
+                                            <Link href={`/auctions/${item._id}`}>
+                                                <img src={item.images[0]} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }} />
+                                            </Link>
+                                        ) : (
+                                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+                                                <Package size={24} />
                                             </div>
                                         )}
                                     </div>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                            <Package style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-                            <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
-                                {filter === 'all' ? 'No listings yet' : `No ${filter} listings`}
-                            </p>
-                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                Create your first auction to start selling!
-                            </p>
-                        </div>
-                    )}
-                </div>
-            </div>
 
-            <style jsx>{`
-                @keyframes fadeSlideIn {
-                    from { opacity: 0; transform: translateY(-12px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-            `}</style>
+                                    <div style={{ flex: 1, minWidth: '200px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                                            <h4 style={{ fontWeight: 700, fontSize: '1rem' }}>{item.title}</h4>
+                                            <span className={`badge ${item.status === 'Completed' ? 'badge-success' : isActive ? 'badge-accent' : 'badge-danger'}`}>
+                                                {item.status === 'Completed' ? '✓ Completed' : isActive ? '● Live' : '⏱ Ended'}
+                                            </span>
+                                        </div>
+                                        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '10px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                            {item.description}
+                                        </p>
+                                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', fontSize: '0.82rem' }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <DollarSign size={14} style={{ color: 'var(--accent)' }} />
+                                                Base: ₹{item.startingPrice?.toLocaleString()}
+                                            </span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
+                                                <TrendingUp size={14} style={{ color: 'var(--success)' }} />
+                                                Current: ₹{item.currentPrice?.toLocaleString()}
+                                            </span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <Lock size={14} style={{ color: 'var(--warning)' }} />
+                                                Deposit: {item.securityPercentage || 5}% (₹{Math.ceil(item.startingPrice * ((item.securityPercentage || 5) / 100)).toLocaleString()})
+                                            </span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <Gavel size={14} />
+                                                {item.bidCount || 0} bids
+                                            </span>
+                                            {isActive && (
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: timeLeft < 3600000 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                                    <Clock size={14} />
+                                                    {hoursLeft}h {minsLeft}m left
+                                                </span>
+                                            )}
+                                        </div>
+                                        {item.winner && (
+                                            <div style={{
+                                                marginTop: '10px', padding: '8px 12px', borderRadius: '10px',
+                                                background: 'var(--success-soft)', display: 'flex', alignItems: 'center', gap: '8px',
+                                                fontSize: '0.82rem',
+                                            }}>
+                                                <Award size={14} style={{ color: 'var(--success)' }} />
+                                                <span style={{ color: 'var(--success)', fontWeight: 600 }}>
+                                                    Winner: {item.winner?.name || 'N/A'} · Final: ₹{item.finalAmount?.toLocaleString() || item.currentPrice?.toLocaleString()}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <Link href={`/auctions/${item._id}`}>
+                                            <button className="btn-secondary" style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
+                                                <Eye size={14} /> View
+                                            </button>
+                                        </Link>
+                                        {isActive && item.bidCount === 0 && (
+                                            <button className="btn-secondary" onClick={() => handleEditClick(item)}
+                                                style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
+                                                Edit
+                                            </button>
+                                        )}
+                                        {(isActive || isEnded) && item.status !== 'Completed' && (
+                                            <button className="btn-primary" onClick={() => handleCloseAuction(item._id)}
+                                                style={{ padding: '8px 14px', fontSize: '0.8rem', background: 'var(--success)' }}>
+                                                <CheckCircle size={14} /> Close
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }

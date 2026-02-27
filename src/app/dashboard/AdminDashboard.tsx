@@ -2,104 +2,52 @@
 
 import React, { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import Link from 'next/link';
 import {
     Loader2, Shield, Users, Package, Gavel, DollarSign, TrendingUp,
     UserCheck, Store, ShoppingBag, Clock, CheckCircle, Trash2,
     ChevronDown, Eye, Coins, AlertTriangle, Crown, Search,
-    PlusCircle, Edit3, Layers
+    PlusCircle, Edit3, Layers, Lock, Unlock, RefreshCcw,
+    Wallet, History, ArrowDownLeft, ArrowUpFromLine
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function AdminDashboard() {
     const { data: session } = useSession();
-    const [loading, setLoading] = useState(true);
-    const [adminData, setAdminData] = useState<any>(null);
-    const [activeTab, setActiveTab] = useState<'users' | 'auctions' | 'tiers'>('users');
-    const [userSearch, setUserSearch] = useState('');
-    const [auctionSearch, setAuctionSearch] = useState('');
-    const [roleFilter, setRoleFilter] = useState<'all' | 'Admin' | 'Seller' | 'Buyer'>('all');
-    const [changingRole, setChangingRole] = useState<string | null>(null);
-
-    // Tier management state
+    const [stats, setStats] = useState<any>(null);
+    const [users, setUsers] = useState<any[]>([]);
+    const [items, setItems] = useState<any[]>([]);
     const [tiers, setTiers] = useState<any[]>([]);
-    const [showTierForm, setShowTierForm] = useState(false);
-    const [editingTier, setEditingTier] = useState<any>(null);
+    const [transactions, setTransactions] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [activeSection, setActiveSection] = useState<'overview' | 'sellers' | 'buyers' | 'auctions' | 'wallet' | 'tiers'>('overview');
+    const [searchText, setSearchText] = useState('');
+
+    // Tier form
     const [tierForm, setTierForm] = useState({ name: '', minBalance: '', bidLimit: '', order: '' });
-    const [savingTier, setSavingTier] = useState(false);
+    const [editingTierId, setEditingTierId] = useState<string | null>(null);
 
-    const fetchData = () => {
-        fetch('/api/admin/stats')
-            .then(r => r.json())
-            .then(data => { if (!data.error) setAdminData(data); setLoading(false); })
-            .catch(() => setLoading(false));
-    };
+    useEffect(() => { fetchAll(); }, []);
 
-    const fetchTiers = () => {
-        fetch('/api/admin/tiers')
-            .then(r => r.json())
-            .then(data => { if (Array.isArray(data)) setTiers(data); })
-            .catch(() => { });
-    };
-
-    useEffect(() => { fetchData(); fetchTiers(); }, []);
-
-    const handleTierSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setSavingTier(true);
+    const fetchAll = async () => {
         try {
-            const body: any = {
-                name: tierForm.name,
-                minBalance: Number(tierForm.minBalance),
-                bidLimit: Number(tierForm.bidLimit),
-                order: Number(tierForm.order) || 0,
-            };
-            if (editingTier) body.tierId = editingTier._id;
-
-            const res = await fetch('/api/admin/tiers', {
-                method: editingTier ? 'PUT' : 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            const data = await res.json();
-            if (data.success) {
-                toast.success(editingTier ? 'Tier updated!' : 'Tier created!');
-                setShowTierForm(false);
-                setEditingTier(null);
-                setTierForm({ name: '', minBalance: '', bidLimit: '', order: '' });
-                fetchTiers();
-            } else {
-                toast.error(data.error || 'Failed');
-            }
-        } catch { toast.error('Error saving tier'); }
-        setSavingTier(false);
-    };
-
-    const handleDeleteTier = async (tierId: string, tierName: string) => {
-        if (!confirm(`Delete tier "${tierName}"? This cannot be undone.`)) return;
-        try {
-            const res = await fetch(`/api/admin/tiers?tierId=${tierId}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (data.success) {
-                toast.success('Tier deleted');
-                fetchTiers();
-            } else toast.error(data.error || 'Failed');
-        } catch { toast.error('Error deleting tier'); }
-    };
-
-    const startEditTier = (tier: any) => {
-        setEditingTier(tier);
-        setTierForm({
-            name: tier.name,
-            minBalance: String(tier.minBalance),
-            bidLimit: String(tier.bidLimit),
-            order: String(tier.order || 0),
-        });
-        setShowTierForm(true);
+            const [statsRes, tiersRes, txRes] = await Promise.all([
+                fetch('/api/admin/stats'),
+                fetch('/api/admin/tiers'),
+                fetch('/api/wallet/transactions?limit=50'),
+            ]);
+            const [statsData, tiersData, txData] = await Promise.all([
+                statsRes.json(), tiersRes.json(), txRes.json(),
+            ]);
+            setStats(statsData.stats);
+            setUsers(statsData.users || []);
+            setItems(statsData.items || []);
+            setTiers(Array.isArray(tiersData) ? tiersData : []);
+            setTransactions(txData.transactions || []);
+        } catch { }
+        setLoading(false);
     };
 
     const handleRoleChange = async (userId: string, newRole: string) => {
-        setChangingRole(userId);
         try {
             const res = await fetch('/api/admin/users', {
                 method: 'PUT',
@@ -107,24 +55,70 @@ export default function AdminDashboard() {
                 body: JSON.stringify({ userId, role: newRole }),
             });
             const data = await res.json();
-            if (data.success) {
-                toast.success(`Role updated to ${newRole}`);
-                fetchData();
-            } else toast.error(data.error || 'Failed to update role');
-        } catch { toast.error('Error updating role'); }
-        setChangingRole(null);
+            if (!res.ok) throw new Error(data.error);
+            toast.success(`Role updated to ${newRole}`);
+            fetchAll();
+        } catch (err: any) { toast.error(err.message); }
     };
 
-    const handleDeleteUser = async (userId: string, userName: string) => {
-        if (!confirm(`Are you sure you want to delete "${userName}"? This action cannot be undone.`)) return;
+    const handleDeleteUser = async (userId: string, name: string) => {
+        if (!confirm(`Delete user "${name}"?`)) return;
         try {
             const res = await fetch(`/api/admin/users?userId=${userId}`, { method: 'DELETE' });
             const data = await res.json();
-            if (data.success) {
-                toast.success('User deleted');
-                fetchData();
-            } else toast.error(data.error || 'Failed to delete user');
-        } catch { toast.error('Error deleting user'); }
+            if (!res.ok) throw new Error(data.error);
+            toast.success('User deleted');
+            fetchAll();
+        } catch (err: any) { toast.error(err.message); }
+    };
+
+    const handleCloseAuction = async (itemId: string) => {
+        if (!confirm('Close this auction? Winner will be declared and deposits processed.')) return;
+        try {
+            const res = await fetch('/api/auctions/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ itemId }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            toast.success(data.message);
+            fetchAll();
+        } catch (err: any) { toast.error(err.message); }
+    };
+
+    const handleTierSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            const body = {
+                name: tierForm.name,
+                minBalance: parseFloat(tierForm.minBalance),
+                bidLimit: parseFloat(tierForm.bidLimit),
+                order: parseInt(tierForm.order) || 0,
+                ...(editingTierId && { id: editingTierId }),
+            };
+            const res = await fetch('/api/admin/tiers', {
+                method: editingTierId ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            toast.success(editingTierId ? 'Tier updated' : 'Tier created');
+            setTierForm({ name: '', minBalance: '', bidLimit: '', order: '' });
+            setEditingTierId(null);
+            fetchAll();
+        } catch (err: any) { toast.error(err.message); }
+    };
+
+    const handleDeleteTier = async (tierId: string) => {
+        if (!confirm('Delete this tier?')) return;
+        try {
+            const res = await fetch(`/api/admin/tiers?id=${tierId}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Failed');
+            toast.success('Tier deleted');
+            fetchAll();
+        } catch (err: any) { toast.error(err.message); }
     };
 
     if (loading) {
@@ -135,228 +129,241 @@ export default function AdminDashboard() {
         );
     }
 
-    const stats = adminData?.stats || {};
-    const users = adminData?.users || [];
-    const items = adminData?.items || [];
-
-    const filteredUsers = users.filter((u: any) => {
-        const matchSearch = u.name?.toLowerCase().includes(userSearch.toLowerCase()) || u.email?.toLowerCase().includes(userSearch.toLowerCase());
-        const matchRole = roleFilter === 'all' || u.role === roleFilter;
-        return matchSearch && matchRole;
-    });
-
-    const filteredAuctions = items.filter((i: any) =>
-        i.title?.toLowerCase().includes(auctionSearch.toLowerCase())
-    );
-
-    const roleColors: Record<string, { bg: string; color: string }> = {
-        Admin: { bg: 'rgba(239,68,68,0.1)', color: '#ef4444' },
-        Seller: { bg: 'rgba(245,158,11,0.1)', color: '#f59e0b' },
-        Buyer: { bg: 'rgba(59,130,246,0.1)', color: '#3b82f6' },
+    const getTypeColor = (type: string) => {
+        switch (type) {
+            case 'credit': case 'refund': case 'unlock': return 'var(--success)';
+            case 'debit': case 'payment': return 'var(--danger)';
+            case 'lock': return 'var(--warning)';
+            default: return 'var(--text-muted)';
+        }
     };
 
+    const formatDate = (d: string) => {
+        const date = new Date(d);
+        return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' ' +
+            date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const sellers = users.filter(u => u.role === 'Seller');
+    const buyers = users.filter(u => u.role === 'Buyer');
+    const filteredUsers = (activeSection === 'sellers' ? sellers : activeSection === 'buyers' ? buyers : users)
+        .filter(u => !searchText || u.name?.toLowerCase().includes(searchText.toLowerCase()) || u.email?.toLowerCase().includes(searchText.toLowerCase()));
+
+    const sidebarItems = [
+        { key: 'overview', label: 'Overview', icon: <TrendingUp size={18} /> },
+        { key: 'sellers', label: `Sellers (${sellers.length})`, icon: <Store size={18} /> },
+        { key: 'buyers', label: `Buyers (${buyers.length})`, icon: <ShoppingBag size={18} /> },
+        { key: 'auctions', label: `Auctions (${items.length})`, icon: <Gavel size={18} /> },
+        { key: 'wallet', label: 'Wallet Logs', icon: <Wallet size={18} /> },
+        { key: 'tiers', label: 'Tier Rules', icon: <Crown size={18} /> },
+    ];
+
     return (
-        <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '28px' }}>
-
-            {/* Page Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <div style={{
-                    width: '48px', height: '48px', borderRadius: '14px',
-                    background: 'linear-gradient(135deg, #ef4444, #f59e0b)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: '0 4px 16px rgba(239,68,68,0.3)',
-                }}>
-                    <Shield style={{ width: 24, height: 24, color: '#fff' }} />
-                </div>
-                <div>
-                    <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                        Admin Dashboard
+        <div style={{ display: 'flex', gap: '24px', minHeight: '70vh' }}>
+            {/* Sidebar */}
+            <div style={{
+                width: '220px', flexShrink: 0,
+                display: 'flex', flexDirection: 'column', gap: '4px',
+            }}>
+                <div style={{ marginBottom: '16px' }}>
+                    <h1 style={{ fontSize: '1.3rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Shield size={22} style={{ color: 'var(--accent)' }} />
+                        Admin Panel
                     </h1>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        Platform overview & management — {session?.user?.name}
-                    </p>
                 </div>
-            </div>
-
-            {/* Stats Grid */}
-            <div className="admin-overview-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '14px' }}>
-                {[
-                    { label: 'Total Users', value: stats.totalUsers || 0, icon: Users, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-                    { label: 'Buyers', value: stats.buyers || 0, icon: ShoppingBag, color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-                    { label: 'Sellers', value: stats.sellers || 0, icon: Store, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-                    { label: 'Admins', value: stats.admins || 0, icon: Shield, color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
-                    { label: 'Total Auctions', value: stats.totalItems || 0, icon: Package, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-                    { label: 'Active', value: stats.activeAuctions || 0, icon: Clock, color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
-                    { label: 'Total Bids', value: stats.totalBids || 0, icon: Gavel, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-                    { label: 'Revenue', value: `₹${(stats.totalRevenue || 0).toLocaleString()}`, icon: DollarSign, color: '#ec4899', bg: 'rgba(236,72,153,0.1)' },
-                ].map((s, i) => (
-                    <div key={i} className="card" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        <div style={{
-                            width: '40px', height: '40px', borderRadius: '10px',
-                            background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                {sidebarItems.map(item => (
+                    <button key={item.key}
+                        onClick={() => setActiveSection(item.key as any)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                            padding: '10px 14px', borderRadius: '12px',
+                            border: 'none', cursor: 'pointer',
+                            fontWeight: activeSection === item.key ? 700 : 500,
+                            fontSize: '0.85rem',
+                            background: activeSection === item.key ? 'var(--accent)' : 'transparent',
+                            color: activeSection === item.key ? '#fff' : 'var(--text-secondary)',
+                            transition: 'all 0.2s',
+                            textAlign: 'left',
                         }}>
-                            <s.icon style={{ width: 20, height: 20, color: s.color }} />
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                {s.label}
-                            </div>
-                            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                                {s.value}
-                            </div>
-                        </div>
-                    </div>
+                        {item.icon} {item.label}
+                    </button>
                 ))}
             </div>
 
-            {/* Tabs: Users / Auctions */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                {/* Tab bar */}
-                <div style={{ display: 'flex', borderBottom: '1px solid var(--border-primary)' }}>
-                    {[
-                        { key: 'users' as const, label: 'Manage Users', icon: Users },
-                        { key: 'auctions' as const, label: 'All Auctions', icon: Package },
-                        { key: 'tiers' as const, label: 'Bidding Tiers', icon: Layers },
-                    ].map((tab) => (
-                        <button
-                            key={tab.key}
-                            onClick={() => setActiveTab(tab.key)}
-                            style={{
-                                flex: 1, padding: '16px', border: 'none', cursor: 'pointer',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                                fontSize: '0.9rem', fontWeight: 700,
-                                background: activeTab === tab.key ? 'var(--accent-soft)' : 'transparent',
-                                color: activeTab === tab.key ? 'var(--accent-text)' : 'var(--text-muted)',
-                                borderBottom: activeTab === tab.key ? '2px solid var(--accent)' : '2px solid transparent',
-                                transition: 'all 0.2s',
-                            }}
-                        >
-                            <tab.icon style={{ width: 16, height: 16 }} />
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
+            {/* Main Content */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-                {activeTab === 'users' ? (
-                    <div style={{ padding: '20px 24px 24px' }}>
-                        {/* Search + Filter */}
-                        <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                            <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
-                                <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
-                                    <Search style={{ width: 16, height: 16 }} />
+                {/* === OVERVIEW === */}
+                {activeSection === 'overview' && (
+                    <>
+                        <h2 style={{ fontWeight: 700 }}>Platform Overview</h2>
+                        <div className="admin-overview-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px' }}>
+                            {[
+                                { label: 'Total Users', value: stats?.totalUsers || 0, icon: <Users size={20} />, color: 'var(--accent)' },
+                                { label: 'Active Auctions', value: stats?.activeAuctions || 0, icon: <Package size={20} />, color: 'var(--success)' },
+                                { label: 'Total Bids', value: stats?.totalBids || 0, icon: <Gavel size={20} />, color: '#ec4899' },
+                                { label: 'Total Revenue', value: `₹${(stats?.totalRevenue || 0).toLocaleString()}`, icon: <TrendingUp size={20} />, color: 'var(--warning)' },
+                                { label: 'Sellers', value: stats?.sellers || 0, icon: <Store size={20} />, color: '#8b5cf6' },
+                                { label: 'Buyers', value: stats?.buyers || 0, icon: <ShoppingBag size={20} />, color: '#06b6d4' },
+                                { label: 'Locked Deposits', value: `₹${(stats?.totalLockedDeposits || 0).toLocaleString()}`, icon: <Lock size={20} />, color: 'var(--warning)' },
+                                { label: 'Transactions', value: stats?.totalTransactions || 0, icon: <History size={20} />, color: '#f97316' },
+                            ].map((s, i) => (
+                                <div key={i} className="card" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{
+                                        width: 40, height: 40, borderRadius: '10px',
+                                        background: `${s.color}18`, display: 'flex',
+                                        alignItems: 'center', justifyContent: 'center', color: s.color,
+                                    }}>{s.icon}</div>
+                                    <div>
+                                        <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500 }}>{s.label}</p>
+                                        <p style={{ fontSize: '1.15rem', fontWeight: 800 }}>{s.value}</p>
+                                    </div>
                                 </div>
-                                <input
-                                    type="text" value={userSearch} onChange={(e) => setUserSearch(e.target.value)}
-                                    placeholder="Search users..." className="input-field focus-ring"
-                                    style={{ paddingLeft: '36px', fontSize: '0.85rem' }}
-                                />
-                            </div>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                                {(['all', 'Admin', 'Seller', 'Buyer'] as const).map((f) => (
-                                    <button
-                                        key={f}
-                                        onClick={() => setRoleFilter(f)}
-                                        style={{
-                                            padding: '8px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                                            fontSize: '0.8rem', fontWeight: 700,
-                                            background: roleFilter === f ? 'var(--accent-soft)' : 'transparent',
-                                            color: roleFilter === f ? 'var(--accent-text)' : 'var(--text-muted)',
-                                            transition: 'all 0.2s',
-                                        }}
-                                    >
-                                        {f === 'all' ? 'All' : f}
-                                    </button>
-                                ))}
-                            </div>
+                            ))}
                         </div>
 
-                        {/* Users Table */}
-                        <div className="table-wrap" style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                        {/* Wallet Flow Summary */}
+                        {stats?.walletFlow && (
+                            <div className="card" style={{ padding: '20px' }}>
+                                <h3 style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Wallet size={18} style={{ color: 'var(--accent)' }} />
+                                    Wallet Flow Summary
+                                </h3>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px' }}>
+                                    {Object.entries(stats.walletFlow).map(([type, data]: any) => (
+                                        <div key={type} style={{
+                                            padding: '12px', borderRadius: '10px',
+                                            background: 'var(--bg-secondary)',
+                                        }}>
+                                            <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '4px' }}>
+                                                {type}
+                                            </p>
+                                            <p style={{ fontSize: '1.1rem', fontWeight: 800, color: getTypeColor(type) }}>
+                                                ₹{data.total?.toLocaleString()}
+                                            </p>
+                                            <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{data.count} txns</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {/* === SELLERS / BUYERS === */}
+                {(activeSection === 'sellers' || activeSection === 'buyers') && (
+                    <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ fontWeight: 700 }}>
+                                {activeSection === 'sellers' ? 'Seller Management' : 'Buyer Management'}
+                            </h2>
+                            <div style={{ position: 'relative' }}>
+                                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input className="input-field" placeholder="Search..."
+                                    value={searchText} onChange={e => setSearchText(e.target.value)}
+                                    style={{ paddingLeft: '36px', width: '240px' }} />
+                            </div>
+                        </div>
+                        <div className="table-wrap">
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '2px solid var(--border-primary)' }}>
-                                        {['Name', 'Email', 'Role', 'Wallet', 'Tier', 'Joined', 'Actions'].map((h) => (
-                                            <th key={h} style={{
-                                                textAlign: 'left', padding: '12px 14px', fontSize: '0.75rem',
-                                                fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em',
-                                            }}>
-                                                {h}
-                                            </th>
-                                        ))}
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Name</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Email</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Wallet</th>
+                                        {activeSection === 'buyers' && (
+                                            <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Locked</th>
+                                        )}
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Tier</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Role</th>
+                                        <th style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 600 }}>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredUsers.map((user: any) => {
-                                        const rc = roleColors[user.role] || roleColors.Buyer;
-                                        const isSelf = user._id === (session?.user as any)?.id;
-                                        return (
-                                            <tr key={user._id} style={{ borderBottom: '1px solid var(--border-primary)', transition: 'background 0.15s' }}
-                                                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-card-hover)'; }}
-                                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                                            >
-                                                <td style={{ padding: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                        <div style={{
-                                                            width: '32px', height: '32px', borderRadius: '8px',
-                                                            background: rc.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                            fontWeight: 800, fontSize: '0.8rem', color: rc.color,
-                                                        }}>
-                                                            {user.name?.charAt(0)?.toUpperCase() || '?'}
-                                                        </div>
-                                                        <span>{user.name}</span>
-                                                        {isSelf && <span style={{ fontSize: '0.7rem', color: 'var(--accent-text)', fontWeight: 700 }}>(You)</span>}
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: '14px', color: 'var(--text-secondary)' }}>{user.email}</td>
-                                                <td style={{ padding: '14px' }}>
-                                                    <select
-                                                        value={user.role}
-                                                        onChange={(e) => handleRoleChange(user._id, e.target.value)}
-                                                        disabled={isSelf || changingRole === user._id}
-                                                        style={{
-                                                            padding: '5px 10px', borderRadius: '6px',
-                                                            border: '1px solid var(--border-primary)',
-                                                            background: rc.bg, color: rc.color,
-                                                            fontWeight: 700, fontSize: '0.8rem', cursor: isSelf ? 'not-allowed' : 'pointer',
-                                                            opacity: isSelf ? 0.5 : 1,
-                                                        }}
-                                                    >
-                                                        <option value="Buyer">Buyer</option>
-                                                        <option value="Seller">Seller</option>
-                                                        <option value="Admin">Admin</option>
-                                                    </select>
-                                                </td>
-                                                <td style={{ padding: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                                    ₹{(user.walletBalance || 0).toLocaleString()}
-                                                </td>
-                                                <td style={{ padding: '14px' }}>
-                                                    <span style={{
-                                                        padding: '3px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700,
-                                                        background: user.tier !== 'None' ? 'rgba(139,92,246,0.1)' : 'var(--bg-input)',
-                                                        color: user.tier !== 'None' ? '#8b5cf6' : 'var(--text-muted)',
+                                    {filteredUsers.length === 0 ? (
+                                        <tr><td colSpan={7} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No users found</td></tr>
+                                    ) : filteredUsers.map((u: any) => (
+                                        <tr key={u._id} style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                                            <td style={{ padding: '10px', fontWeight: 600 }}>{u.name}</td>
+                                            <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>{u.email}</td>
+                                            <td style={{ padding: '10px', fontWeight: 700 }}>₹{(u.walletBalance || 0).toLocaleString()}</td>
+                                            {activeSection === 'buyers' && (
+                                                <td style={{ padding: '10px', fontWeight: 600, color: 'var(--warning)' }}>₹{(u.lockedBalance || 0).toLocaleString()}</td>
+                                            )}
+                                            <td style={{ padding: '10px' }}>
+                                                <span className="badge badge-accent">{u.tier || 'None'}</span>
+                                            </td>
+                                            <td style={{ padding: '10px' }}>
+                                                <select value={u.role} onChange={e => handleRoleChange(u._id, e.target.value)}
+                                                    style={{
+                                                        background: 'var(--bg-input)', color: 'var(--text-primary)',
+                                                        border: '1px solid var(--border-primary)', borderRadius: '8px',
+                                                        padding: '4px 8px', fontSize: '0.78rem',
                                                     }}>
-                                                        {user.tier || 'None'}
+                                                    <option value="Buyer">Buyer</option>
+                                                    <option value="Seller">Seller</option>
+                                                    <option value="Admin">Admin</option>
+                                                </select>
+                                            </td>
+                                            <td style={{ padding: '10px', textAlign: 'center' }}>
+                                                <button onClick={() => handleDeleteUser(u._id, u.name)}
+                                                    style={{
+                                                        background: 'var(--danger-soft)', color: 'var(--danger)',
+                                                        border: 'none', borderRadius: '8px', padding: '6px 10px',
+                                                        cursor: 'pointer', fontSize: '0.78rem',
+                                                    }}>
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
+
+                {/* === AUCTIONS === */}
+                {activeSection === 'auctions' && (
+                    <>
+                        <h2 style={{ fontWeight: 700 }}>All Auctions</h2>
+                        <div className="table-wrap">
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '2px solid var(--border-primary)' }}>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Title</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Seller</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Base</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Current</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Deposit %</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Ends</th>
+                                        <th style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 600 }}>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {items.map((item: any) => {
+                                        const isActive = item.status === 'Active' && new Date(item.endDate) > new Date();
+                                        return (
+                                            <tr key={item._id} style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                                                <td style={{ padding: '10px', fontWeight: 600 }}>{item.title}</td>
+                                                <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>{item.seller?.name || '—'}</td>
+                                                <td style={{ padding: '10px' }}>₹{item.startingPrice?.toLocaleString()}</td>
+                                                <td style={{ padding: '10px', fontWeight: 700, color: 'var(--accent)' }}>₹{item.currentPrice?.toLocaleString()}</td>
+                                                <td style={{ padding: '10px', color: 'var(--warning)', fontWeight: 600 }}>{item.securityPercentage || 5}%</td>
+                                                <td style={{ padding: '10px' }}>
+                                                    <span className={`badge ${item.status === 'Completed' ? 'badge-success' : isActive ? 'badge-accent' : 'badge-danger'}`}>
+                                                        {item.status === 'Completed' ? '✓ Done' : isActive ? '● Live' : '⏱ Ended'}
                                                     </span>
                                                 </td>
-                                                <td style={{ padding: '14px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                                                    {new Date(user.createdAt).toLocaleDateString()}
+                                                <td style={{ padding: '10px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                                    {formatDate(item.endDate)}
                                                 </td>
-                                                <td style={{ padding: '14px' }}>
-                                                    {!isSelf && (
-                                                        <button
-                                                            onClick={() => handleDeleteUser(user._id, user.name)}
-                                                            style={{
-                                                                width: '32px', height: '32px', borderRadius: '8px',
-                                                                border: 'none', cursor: 'pointer',
-                                                                background: 'rgba(239,68,68,0.1)', color: '#ef4444',
-                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                transition: 'background 0.2s',
-                                                            }}
-                                                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; }}
-                                                            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
-                                                            title="Delete user"
-                                                        >
-                                                            <Trash2 style={{ width: 14, height: 14 }} />
+                                                <td style={{ padding: '10px', textAlign: 'center' }}>
+                                                    {item.status !== 'Completed' && (
+                                                        <button onClick={() => handleCloseAuction(item._id)}
+                                                            className="btn-primary" style={{ padding: '5px 10px', fontSize: '0.75rem', background: 'var(--success)' }}>
+                                                            Close
                                                         </button>
                                                     )}
                                                 </td>
@@ -366,234 +373,139 @@ export default function AdminDashboard() {
                                 </tbody>
                             </table>
                         </div>
+                    </>
+                )}
 
-                        {filteredUsers.length === 0 && (
-                            <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                                <Users style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-                                <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No users found</p>
-                            </div>
-                        )}
-                    </div>
-                ) : activeTab === 'auctions' ? (
-                    <div style={{ padding: '20px 24px 24px' }}>
-                        {/* Auction search */}
-                        <div style={{ position: 'relative', marginBottom: '16px', maxWidth: '400px' }}>
-                            <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
-                                <Search style={{ width: 16, height: 16 }} />
-                            </div>
-                            <input
-                                type="text" value={auctionSearch} onChange={(e) => setAuctionSearch(e.target.value)}
-                                placeholder="Search auctions..." className="input-field focus-ring"
-                                style={{ paddingLeft: '36px', fontSize: '0.85rem' }}
-                            />
-                        </div>
-
-                        {/* Auctions Table */}
-                        <div className="table-wrap" style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                {/* === WALLET LOGS === */}
+                {activeSection === 'wallet' && (
+                    <>
+                        <h2 style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Wallet size={22} style={{ color: 'var(--accent)' }} />
+                            Wallet Transaction Logs
+                        </h2>
+                        <div className="table-wrap card" style={{ padding: '20px' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '2px solid var(--border-primary)' }}>
-                                        {['Item', 'Seller', 'Starting', 'Current', 'Status', 'End Date', 'View'].map((h) => (
-                                            <th key={h} style={{
-                                                textAlign: 'left', padding: '12px 14px', fontSize: '0.75rem',
-                                                fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em',
-                                            }}>
-                                                {h}
-                                            </th>
-                                        ))}
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>User</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Type</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Amount</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Description</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Auction</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Date</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredAuctions.map((item: any) => {
-                                        const isActive = item.status === 'Active' && new Date(item.endDate) > new Date();
-                                        return (
-                                            <tr key={item._id} style={{ borderBottom: '1px solid var(--border-primary)', transition: 'background 0.15s' }}
-                                                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-card-hover)'; }}
-                                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                                            >
-                                                <td style={{ padding: '14px', fontWeight: 700, color: 'var(--text-primary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                    {item.title}
-                                                </td>
-                                                <td style={{ padding: '14px', color: 'var(--text-secondary)' }}>
-                                                    {item.seller?.name || 'Unknown'}
-                                                </td>
-                                                <td style={{ padding: '14px', fontWeight: 600, color: 'var(--text-muted)' }}>
-                                                    ₹{item.startingPrice?.toLocaleString()}
-                                                </td>
-                                                <td style={{ padding: '14px', fontWeight: 800, color: 'var(--text-primary)' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                        <Coins style={{ width: 14, height: 14, color: 'var(--accent-text)' }} />
-                                                        ₹{item.currentPrice?.toLocaleString()}
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: '14px' }}>
-                                                    <span className={isActive ? 'badge-success' : 'badge-danger'} style={{ fontSize: '0.72rem', padding: '3px 10px' }}>
-                                                        {isActive ? '● Live' : '● Ended'}
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: '14px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                                                    {new Date(item.endDate).toLocaleDateString()}
-                                                </td>
-                                                <td style={{ padding: '14px' }}>
-                                                    <Link
-                                                        href={`/auctions/${item._id}`}
-                                                        style={{
-                                                            width: '32px', height: '32px', borderRadius: '8px',
-                                                            background: 'var(--accent-soft)', color: 'var(--accent-text)',
-                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                            textDecoration: 'none',
-                                                        }}
-                                                    >
-                                                        <Eye style={{ width: 14, height: 14 }} />
-                                                    </Link>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
+                                    {transactions.length === 0 ? (
+                                        <tr><td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No transactions</td></tr>
+                                    ) : transactions.map((tx: any) => (
+                                        <tr key={tx._id} style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                                            <td style={{ padding: '10px', fontWeight: 600 }}>{tx.user?.name || '—'}</td>
+                                            <td style={{ padding: '10px' }}>
+                                                <span style={{
+                                                    display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                                    padding: '3px 10px', borderRadius: '8px', fontSize: '0.72rem',
+                                                    fontWeight: 700, color: getTypeColor(tx.type),
+                                                    background: `${getTypeColor(tx.type)}15`,
+                                                    textTransform: 'uppercase',
+                                                }}>
+                                                    {tx.type}
+                                                </span>
+                                            </td>
+                                            <td style={{
+                                                padding: '10px', fontWeight: 700,
+                                                color: ['credit', 'refund'].includes(tx.type) ? 'var(--success)' : 'var(--danger)',
+                                            }}>
+                                                {['credit', 'refund'].includes(tx.type) ? '+' : '-'}₹{tx.amount?.toLocaleString()}
+                                            </td>
+                                            <td style={{ padding: '10px', color: 'var(--text-secondary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {tx.description}
+                                            </td>
+                                            <td style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                                                {tx.auction?.title || '—'}
+                                            </td>
+                                            <td style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                                                {formatDate(tx.createdAt)}
+                                            </td>
+                                        </tr>
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
+                    </>
+                )}
 
-                        {filteredAuctions.length === 0 && (
-                            <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                                <Package style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-                                <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No auctions found</p>
-                            </div>
-                        )}
-                    </div>
-                ) : activeTab === 'tiers' ? (
-                    /* ═══ TIERS TAB ═══ */
-                    <div style={{ padding: '20px 24px 24px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-                            <div>
-                                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Manage Bidding Tiers</h3>
-                                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>Control wallet requirements and bid limits for each tier</p>
-                            </div>
-                            <button
-                                onClick={() => { setEditingTier(null); setTierForm({ name: '', minBalance: '', bidLimit: '', order: '' }); setShowTierForm(!showTierForm); }}
-                                className="btn-primary"
-                                style={{ padding: '8px 20px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                            >
-                                <PlusCircle style={{ width: 15, height: 15 }} />
-                                {showTierForm ? 'Cancel' : 'Add Tier'}
-                            </button>
+                {/* === TIER RULES === */}
+                {activeSection === 'tiers' && (
+                    <>
+                        <h2 style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Crown size={22} style={{ color: 'var(--accent)' }} />
+                            Tier / Security Deposit Rules
+                        </h2>
+
+                        {/* Create / Edit Tier Form */}
+                        <div className="card" style={{ padding: '24px' }}>
+                            <h3 style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '14px' }}>
+                                {editingTierId ? 'Edit Tier' : 'Add New Tier'}
+                            </h3>
+                            <form onSubmit={handleTierSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', alignItems: 'end' }}>
+                                <div>
+                                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Tier Name</label>
+                                    <input className="input-field" value={tierForm.name}
+                                        onChange={e => setTierForm({ ...tierForm, name: e.target.value })}
+                                        placeholder="e.g. Gold" required />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Min Balance (₹)</label>
+                                    <input type="number" className="input-field" value={tierForm.minBalance}
+                                        onChange={e => setTierForm({ ...tierForm, minBalance: e.target.value })}
+                                        placeholder="e.g. 500" required />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>Bid Limit (₹)</label>
+                                    <input type="number" className="input-field" value={tierForm.bidLimit}
+                                        onChange={e => setTierForm({ ...tierForm, bidLimit: e.target.value })}
+                                        placeholder="e.g. 100000" required />
+                                </div>
+                                <div>
+                                    <button type="submit" className="btn-primary" style={{ width: '100%' }}>
+                                        {editingTierId ? 'Update' : 'Add Tier'}
+                                    </button>
+                                </div>
+                            </form>
                         </div>
 
-                        {/* Tier Form */}
-                        {showTierForm && (
-                            <form onSubmit={handleTierSubmit} className="card" style={{ padding: '24px', marginBottom: '20px', animation: 'fadeSlideIn 0.3s ease' }}>
-                                <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '16px' }}>
-                                    {editingTier ? `Edit "${editingTier.name}"` : 'Create New Tier'}
-                                </h4>
-                                <div className="dash-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '16px' }}>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Tier Name</label>
-                                        <input type="text" value={tierForm.name} onChange={(e) => setTierForm({ ...tierForm, name: e.target.value })} required
-                                            className="input-field focus-ring" placeholder="e.g. Tier A" />
+                        {/* Existing Tiers */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '14px' }}>
+                            {tiers.map((tier: any) => (
+                                <div key={tier._id} className="card" style={{ padding: '18px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                        <h4 style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <Crown size={16} style={{ color: 'var(--warning)' }} />
+                                            {tier.name}
+                                        </h4>
+                                        <div style={{ display: 'flex', gap: '4px' }}>
+                                            <button onClick={() => {
+                                                setEditingTierId(tier._id);
+                                                setTierForm({ name: tier.name, minBalance: String(tier.minBalance), bidLimit: String(tier.bidLimit), order: String(tier.order || 0) });
+                                            }}
+                                                style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer' }}>
+                                                <Edit3 size={12} />
+                                            </button>
+                                            <button onClick={() => handleDeleteTier(tier._id)}
+                                                style={{ background: 'var(--danger-soft)', color: 'var(--danger)', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer' }}>
+                                                <Trash2 size={12} />
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Min Balance (₹)</label>
-                                        <input type="number" value={tierForm.minBalance} onChange={(e) => setTierForm({ ...tierForm, minBalance: e.target.value })} required min={0}
-                                            className="input-field focus-ring" placeholder="100" />
-                                    </div>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Bid Limit (₹)</label>
-                                        <input type="number" value={tierForm.bidLimit} onChange={(e) => setTierForm({ ...tierForm, bidLimit: e.target.value })} required min={1}
-                                            className="input-field focus-ring" placeholder="10000" />
-                                    </div>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Order (priority)</label>
-                                        <input type="number" value={tierForm.order} onChange={(e) => setTierForm({ ...tierForm, order: e.target.value })} min={0}
-                                            className="input-field focus-ring" placeholder="1" />
-                                    </div>
+                                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Min Balance: ₹{tier.minBalance?.toLocaleString()}</p>
+                                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Bid Limit: ₹{tier.bidLimit?.toLocaleString()}</p>
                                 </div>
-                                <button type="submit" disabled={savingTier} className="btn-primary" style={{ padding: '10px 28px', fontSize: '0.88rem' }}>
-                                    {savingTier ? <Loader2 style={{ width: 16, height: 16 }} className="animate-spin" /> : (editingTier ? 'Update Tier' : 'Create Tier')}
-                                </button>
-                            </form>
-                        )}
-
-                        {/* Tier List */}
-                        {tiers.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                {tiers.map((tier: any) => (
-                                    <div
-                                        key={tier._id}
-                                        style={{
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                            padding: '18px 20px', borderRadius: '14px',
-                                            background: 'var(--bg-input)', border: '1px solid var(--border-primary)',
-                                            transition: 'border-color 0.2s',
-                                        }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-primary)'; }}
-                                    >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                                            <div style={{
-                                                width: '44px', height: '44px', borderRadius: '12px',
-                                                background: 'rgba(139,92,246,0.1)', color: '#8b5cf6',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                fontWeight: 800, fontSize: '0.85rem',
-                                            }}>
-                                                <Crown style={{ width: 20, height: 20 }} />
-                                            </div>
-                                            <div>
-                                                <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)' }}>{tier.name}</div>
-                                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                                                    <span>Min Balance: <strong style={{ color: 'var(--text-secondary)' }}>₹{tier.minBalance.toLocaleString()}</strong></span>
-                                                    <span>Bid Limit: <strong style={{ color: 'var(--accent-text)' }}>₹{tier.bidLimit.toLocaleString()}</strong></span>
-                                                    <span>Order: <strong style={{ color: 'var(--text-secondary)' }}>{tier.order}</strong></span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <button
-                                                onClick={() => startEditTier(tier)}
-                                                style={{
-                                                    width: '34px', height: '34px', borderRadius: '8px',
-                                                    border: 'none', cursor: 'pointer',
-                                                    background: 'rgba(59,130,246,0.1)', color: '#3b82f6',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    transition: 'background 0.2s',
-                                                }}
-                                                title="Edit tier"
-                                            >
-                                                <Edit3 style={{ width: 14, height: 14 }} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteTier(tier._id, tier.name)}
-                                                style={{
-                                                    width: '34px', height: '34px', borderRadius: '8px',
-                                                    border: 'none', cursor: 'pointer',
-                                                    background: 'rgba(239,68,68,0.1)', color: '#ef4444',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    transition: 'background 0.2s',
-                                                }}
-                                                title="Delete tier"
-                                            >
-                                                <Trash2 style={{ width: 14, height: 14 }} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                                <Layers style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-                                <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No tiers configured</p>
-                                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>Add your first tier to get started</p>
-                            </div>
-                        )}
-                    </div>
-                ) : null}
+                            ))}
+                        </div>
+                    </>
+                )}
             </div>
-
-            <style jsx>{`
-                @keyframes fadeSlideIn {
-                    from { opacity: 0; transform: translateY(-12px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-            `}</style>
         </div>
     );
 }

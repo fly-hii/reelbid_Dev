@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, Clock, Loader2, Coins, Search, SlidersHorizontal } from 'lucide-react';
+import { ArrowUpRight, Clock, Loader2, Coins, Search, SlidersHorizontal, Lock, Gavel, Filter } from 'lucide-react';
 
 interface Item {
     _id: string;
@@ -12,12 +12,18 @@ interface Item {
     currentPrice: number;
     status: string;
     endDate: string;
+    securityPercentage?: number;
+    category?: string;
+    bidCount?: number;
+    images?: string[];
 }
 
 export default function Auctions() {
     const [items, setItems] = useState<Item[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [filter, setFilter] = useState<'all' | 'live' | 'ended'>('all');
+    const [categoryFilter, setCategoryFilter] = useState('');
 
     useEffect(() => {
         fetch('/api/items')
@@ -29,9 +35,16 @@ export default function Auctions() {
             .catch(() => setLoading(false));
     }, []);
 
-    const filtered = items.filter(item =>
-        item.title.toLowerCase().includes(search.toLowerCase())
-    );
+    const categories = [...new Set(items.map(i => i.category || 'General'))];
+
+    const filtered = items.filter(item => {
+        const matchesSearch = item.title.toLowerCase().includes(search.toLowerCase()) ||
+            (item.description || '').toLowerCase().includes(search.toLowerCase());
+        const isLive = new Date(item.endDate) > new Date() && item.status === 'Active';
+        const matchesFilter = filter === 'all' || (filter === 'live' && isLive) || (filter === 'ended' && !isLive);
+        const matchesCategory = !categoryFilter || (item.category || 'General') === categoryFilter;
+        return matchesSearch && matchesFilter && matchesCategory;
+    });
 
     if (loading) {
         return (
@@ -42,7 +55,7 @@ export default function Auctions() {
     }
 
     return (
-        <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
             {/* Header */}
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'start', gap: '16px' }}>
                 <div>
@@ -70,10 +83,44 @@ export default function Auctions() {
                 </div>
             </div>
 
+            {/* Filters */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <Filter size={16} style={{ color: 'var(--text-muted)' }} />
+                {(['all', 'live', 'ended'] as const).map(f => (
+                    <button key={f} onClick={() => setFilter(f)} style={{
+                        padding: '6px 16px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                        fontWeight: 600, fontSize: '0.82rem',
+                        background: filter === f ? 'var(--accent)' : 'var(--bg-card)',
+                        color: filter === f ? '#fff' : 'var(--text-muted)',
+                        transition: 'all 0.2s',
+                    }}>
+                        {f === 'all' ? 'All' : f === 'live' ? '● Live' : '⏱ Ended'}
+                    </button>
+                ))}
+
+                {categories.length > 1 && (
+                    <>
+                        <div style={{ width: '1px', height: '20px', background: 'var(--border-primary)', margin: '0 4px' }} />
+                        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
+                            style={{
+                                padding: '6px 12px', borderRadius: '10px', fontSize: '0.82rem',
+                                background: 'var(--bg-card)', color: 'var(--text-primary)',
+                                border: '1px solid var(--border-primary)', cursor: 'pointer',
+                            }}>
+                            <option value="">All Categories</option>
+                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                    </>
+                )}
+            </div>
+
             {/* Grid */}
-            <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+            <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
                 {filtered.map((item) => {
-                    const isLive = new Date(item.endDate) > new Date();
+                    const isLive = new Date(item.endDate) > new Date() && item.status === 'Active';
+                    const timeLeft = new Date(item.endDate).getTime() - Date.now();
+                    const hoursLeft = Math.max(0, Math.floor(timeLeft / (1000 * 60 * 60)));
+                    const minsLeft = Math.max(0, Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60)));
 
                     return (
                         <Link
@@ -93,7 +140,12 @@ export default function Auctions() {
                             >
                                 {/* Image area */}
                                 <div style={{ height: '180px', position: 'relative', overflow: 'hidden', background: 'var(--bg-secondary)' }}>
-                                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, var(--gradient-hero-1), var(--gradient-hero-2))' }} />
+                                    {item.images?.[0] ? (
+                                        <img src={item.images[0]} alt={item.title}
+                                            style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }} />
+                                    ) : (
+                                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, var(--gradient-hero-1), var(--gradient-hero-2))' }} />
+                                    )}
 
                                     {/* Status badge */}
                                     <div
@@ -101,8 +153,31 @@ export default function Auctions() {
                                         style={{ position: 'absolute', bottom: '12px', left: '12px' }}
                                     >
                                         <Clock style={{ width: 12, height: 12 }} />
-                                        {isLive ? 'Live' : 'Ended'}
+                                        {isLive ? `${hoursLeft}h ${minsLeft}m` : 'Ended'}
                                     </div>
+
+                                    {/* Security Deposit Badge */}
+                                    <div style={{
+                                        position: 'absolute', top: '12px', right: '12px',
+                                        padding: '4px 10px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: 700,
+                                        background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b',
+                                        backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', gap: '4px',
+                                    }}>
+                                        <Lock style={{ width: 10, height: 10 }} />
+                                        {item.securityPercentage || 5}% Deposit
+                                    </div>
+
+                                    {/* Category badge */}
+                                    {item.category && item.category !== 'General' && (
+                                        <div style={{
+                                            position: 'absolute', top: '12px', left: '12px',
+                                            padding: '4px 10px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: 700,
+                                            background: 'var(--accent-soft)', color: 'var(--accent-text)',
+                                            backdropFilter: 'blur(4px)',
+                                        }}>
+                                            {item.category}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Content */}
@@ -111,13 +186,22 @@ export default function Auctions() {
                                         fontSize: '1.05rem',
                                         fontWeight: 700,
                                         color: 'var(--text-primary)',
-                                        marginBottom: '16px',
+                                        marginBottom: '12px',
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
                                         whiteSpace: 'nowrap',
                                     }}>
                                         {item.title}
                                     </h3>
+
+                                    {/* Bid count */}
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                        fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '12px',
+                                    }}>
+                                        <Gavel size={13} />
+                                        {item.bidCount || 0} bids
+                                    </div>
 
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}>
                                         <div>

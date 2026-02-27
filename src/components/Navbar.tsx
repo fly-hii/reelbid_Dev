@@ -90,6 +90,29 @@ export default function Navbar() {
                         </Link>
 
                         <Link
+                            href="/leaderboard"
+                            style={{
+                                color: 'var(--text-secondary)',
+                                textDecoration: 'none',
+                                fontSize: '0.9rem',
+                                fontWeight: 600,
+                                padding: '8px 16px',
+                                borderRadius: '10px',
+                                transition: 'color 0.2s, background 0.2s',
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.color = 'var(--text-primary)';
+                                e.currentTarget.style.background = 'var(--bg-card-hover)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.color = 'var(--text-secondary)';
+                                e.currentTarget.style.background = 'transparent';
+                            }}
+                        >
+                            Leaderboard
+                        </Link>
+
+                        <Link
                             href="/working-process"
                             style={{
                                 color: 'var(--text-secondary)',
@@ -303,6 +326,9 @@ export default function Navbar() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <Link href="/auctions" onClick={() => setMobileOpen(false)} style={{ color: 'var(--text-primary)', textDecoration: 'none', padding: '10px 0', fontWeight: 600 }}>
                             Auctions
+                        </Link>
+                        <Link href="/leaderboard" onClick={() => setMobileOpen(false)} style={{ color: 'var(--text-primary)', textDecoration: 'none', padding: '10px 0', fontWeight: 600 }}>
+                            Leaderboard
                         </Link>
                         <Link href="/working-process" onClick={() => setMobileOpen(false)} style={{ color: 'var(--text-primary)', textDecoration: 'none', padding: '10px 0', fontWeight: 600 }}>
                             Process

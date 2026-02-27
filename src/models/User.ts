@@ -14,10 +14,12 @@ const UserSchema = new mongoose.Schema(
             required: true,
         },
         walletBalance: { type: Number, default: 0 },
+        lockedBalance: { type: Number, default: 0 }, // total security deposits locked
         tier: {
             type: String,
             default: 'None',
         },
+        isApproved: { type: Boolean, default: false }, // admin approval for sellers
         // Profile completion fields
         profileCompleted: { type: Boolean, default: false },
         address: { type: String },

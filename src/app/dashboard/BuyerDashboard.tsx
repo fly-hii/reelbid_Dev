@@ -4,39 +4,94 @@ import React, { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import {
-    Loader2, CreditCard, Crown, Check, ChevronRight, Wallet,
+    Loader2, CreditCard, ChevronRight, Wallet,
     ShoppingBag, Gavel, Trophy, TrendingUp, Clock, ArrowUpRight,
-    Eye, Coins
+    Eye, Coins, Lock, Unlock, RefreshCcw, ArrowDownLeft,
+    ArrowUpFromLine, DollarSign, History, AlertCircle, CheckCircle, PlusCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function BuyerDashboard() {
     const { data: session } = useSession();
-    const [wallet, setWallet] = useState({ balance: 0, tier: 'None' });
+    const [walletData, setWalletData] = useState<any>(null);
+    const [transactions, setTransactions] = useState<any[]>([]);
+    const [myBids, setMyBids] = useState<any[]>([]);
+    const [auctions, setAuctions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [topupAmount, setTopupAmount] = useState('');
-    const [showTopup, setShowTopup] = useState(false);
-    const [buyerData, setBuyerData] = useState<any>(null);
-    const [activeTab, setActiveTab] = useState<'bids' | 'won'>('bids');
-    const [tiers, setTiers] = useState<any[]>([]);
+    const [topupLoading, setTopupLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState<'overview' | 'wallet' | 'bids' | 'auctions'>('overview');
+
+    // Quick Bid Modal State
+    const [bidModalOpen, setBidModalOpen] = useState(false);
+    const [bidItem, setBidItem] = useState<any>(null);
+    const [quickBidAmount, setQuickBidAmount] = useState('');
+    const [bidding, setBidding] = useState(false);
 
     useEffect(() => {
-        Promise.all([
-            fetch('/api/wallet').then(r => r.json()),
-            fetch('/api/buyer/bids').then(r => r.json()),
-            fetch('/api/tiers').then(r => r.json()),
-        ]).then(([walletData, bidData, tierData]) => {
-            if (!walletData.error) setWallet(walletData);
-            if (!bidData.error) setBuyerData(bidData);
-            if (Array.isArray(tierData)) setTiers(tierData);
-            setLoading(false);
-        }).catch(() => setLoading(false));
+        if (bidModalOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => { document.body.style.overflow = ''; };
+    }, [bidModalOpen]);
+
+    useEffect(() => {
+        fetchData();
     }, []);
+
+    const fetchData = async () => {
+        try {
+            const [walletRes, bidsRes, auctionsRes, txRes] = await Promise.all([
+                fetch('/api/wallet?transactions=true&limit=10'),
+                fetch(`/api/bids?userId=${(session?.user as any)?.id}`),
+                fetch('/api/items'),
+                fetch('/api/wallet/transactions?limit=20'),
+            ]);
+            const [wallet, bids, auctionsList, txData] = await Promise.all([
+                walletRes.json(), bidsRes.json(), auctionsRes.json(), txRes.json(),
+            ]);
+            setWalletData(wallet);
+            setMyBids(Array.isArray(bids) ? bids : []);
+            setAuctions(Array.isArray(auctionsList) ? auctionsList : []);
+            setTransactions(txData.transactions || []);
+
+            // Refund check: quietly execute completion on naturally ended auctions where user has active locks
+            const now = new Date();
+            if (Array.isArray(bids)) {
+                let didTriggerRefund = false;
+                for (const bid of bids) {
+                    if (bid.item && bid.status === 'active' && bid.item.status !== 'Completed' && new Date(bid.item.endDate) <= now) {
+                        try {
+                            await fetch('/api/auctions/complete', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ itemId: bid.item._id }),
+                            });
+                            didTriggerRefund = true;
+                        } catch { }
+                    }
+                }
+                // If anything was unlocked, we quickly grab their new wallet data to reflect the returned cash
+                if (didTriggerRefund) {
+                    const freshWallet = await fetch('/api/wallet?transactions=true&limit=10').then(r => r.json());
+                    setWalletData(freshWallet);
+                    const freshBids = await fetch(`/api/bids?userId=${(session?.user as any)?.id}`).then(r => r.json());
+                    setMyBids(Array.isArray(freshBids) ? freshBids : []);
+                    const freshTx = await fetch('/api/wallet/transactions?limit=20').then(r => r.json());
+                    setTransactions(freshTx.transactions || []);
+                }
+            }
+        } catch { }
+        setLoading(false);
+    };
 
     const handleTopup = async (e: React.FormEvent) => {
         e.preventDefault();
-        const amt = parseInt(topupAmount, 10);
-        if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return; }
+        const amt = parseFloat(topupAmount);
+        if (!amt || amt <= 0) return toast.error('Enter a valid amount');
+        setTopupLoading(true);
         try {
             const res = await fetch('/api/wallet', {
                 method: 'POST',
@@ -44,13 +99,15 @@ export default function BuyerDashboard() {
                 body: JSON.stringify({ amount: amt }),
             });
             const data = await res.json();
-            if (data.success) {
-                setWallet({ balance: data.balance, tier: data.tier });
-                toast.success(`Wallet funded! You are now in ${data.tier}.`);
-                setTopupAmount('');
-                setShowTopup(false);
-            } else toast.error(data.error);
-        } catch { toast.error('Topup failed'); }
+            if (!res.ok) throw new Error(data.error);
+            setWalletData((prev: any) => ({ ...prev, ...data }));
+            setTopupAmount('');
+            toast.success(`₹${amt} added to wallet!`);
+            fetchData();
+        } catch (err: any) {
+            toast.error(err.message);
+        }
+        setTopupLoading(false);
     };
 
     if (loading) {
@@ -61,306 +118,537 @@ export default function BuyerDashboard() {
         );
     }
 
-    const stats = buyerData?.stats || { totalBidsPlaced: 0, totalWon: 0, totalSpent: 0, activeBidsCount: 0 };
+    // Filter to get the latest unique bid per item to accurately know if they are winning or outbid
+    const uniqueBids = myBids.reduce((acc: any[], bid: any) => {
+        if (!acc.find(b => b.item?._id === bid.item?._id)) {
+            acc.push(bid);
+        }
+        return acc;
+    }, []);
+
+    const nowTime = new Date();
+    const activeBids = uniqueBids.filter(b => b.item && b.item.status !== 'Completed' && new Date(b.item.endDate) > nowTime);
+    const wonBids = myBids.filter(b => b.status === 'won');
+    const totalLocked = walletData?.lockedBalance || 0;
+
+    const handleQuickBidSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!bidItem) return;
+        const amt = parseInt(quickBidAmount, 10);
+        if (isNaN(amt) || amt <= bidItem.currentPrice) return toast.error('Bid must be higher than current price');
+        setBidding(true);
+        try {
+            const res = await fetch('/api/bids', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ itemId: bidItem._id, amount: amt }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(data.error || 'Bid failed');
+            } else {
+                toast.success('Bid placed successfully! 🎯');
+                setBidModalOpen(false);
+                fetchData();
+            }
+        } catch { toast.error('Network error'); }
+        setBidding(false);
+    };
+
+    const getTypeIcon = (type: string) => {
+        switch (type) {
+            case 'credit': return <ArrowDownLeft size={14} />;
+            case 'debit': return <ArrowUpFromLine size={14} />;
+            case 'lock': return <Lock size={14} />;
+            case 'unlock': return <Unlock size={14} />;
+            case 'refund': return <RefreshCcw size={14} />;
+            case 'payment': return <DollarSign size={14} />;
+            default: return <History size={14} />;
+        }
+    };
+
+    const getTypeColor = (type: string) => {
+        switch (type) {
+            case 'credit': case 'refund': case 'unlock': return 'var(--success)';
+            case 'debit': case 'payment': return 'var(--danger)';
+            case 'lock': return 'var(--warning)';
+            default: return 'var(--text-muted)';
+        }
+    };
+
+    const formatDate = (d: string) => {
+        const date = new Date(d);
+        return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) +
+            ' ' + date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const tabBtnStyle = (tab: string) => ({
+        padding: '10px 20px',
+        borderRadius: '12px',
+        border: 'none',
+        cursor: 'pointer',
+        fontWeight: 600 as const,
+        fontSize: '0.85rem',
+        background: activeTab === tab ? 'var(--accent)' : 'var(--bg-card)',
+        color: activeTab === tab ? '#fff' : 'var(--text-secondary)',
+        transition: 'all 0.2s',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+    });
 
     return (
-        <div className="animate-fade-in" style={{ maxWidth: '1100px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '28px' }}>
-
-            {/* Page Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                    <div style={{
-                        width: '48px', height: '48px', borderRadius: '14px',
-                        background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: '0 4px 16px rgba(59,130,246,0.3)',
-                    }}>
-                        <ShoppingBag style={{ width: 24, height: 24, color: '#fff' }} />
-                    </div>
-                    <div>
-                        <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                            Buyer Dashboard
-                        </h1>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                            Welcome back, {session?.user?.name || 'Collector'} — manage your bids & wallet
-                        </p>
-                    </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                    <h1 style={{ fontSize: '1.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <ShoppingBag size={28} style={{ color: 'var(--accent)' }} />
+                        Buyer Dashboard
+                    </h1>
+                    <p style={{ color: 'var(--text-muted)', marginTop: '4px' }}>Welcome back, {(session?.user as any)?.name}</p>
                 </div>
-                <Link
-                    href="/auctions"
-                    className="btn-primary"
-                    style={{ padding: '10px 24px', fontSize: '0.9rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                >
-                    <Gavel style={{ width: 16, height: 16 }} />
-                    Browse Auctions
-                </Link>
-            </div>
-
-            {/* Stats Row */}
-            <div className="dash-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                {[
-                    { label: 'Bids Placed', value: stats.totalBidsPlaced, icon: Gavel, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-                    { label: 'Active Bids', value: stats.activeBidsCount, icon: Clock, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-                    { label: 'Items Won', value: stats.totalWon, icon: Trophy, color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
-                    { label: 'Total Spent', value: `₹${stats.totalSpent.toLocaleString()}`, icon: TrendingUp, color: '#ec4899', bg: 'rgba(236,72,153,0.1)' },
-                ].map((s, i) => (
-                    <div key={i} className="card" style={{ padding: '22px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <div style={{
-                            width: '44px', height: '44px', borderRadius: '12px',
-                            background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                            <s.icon style={{ width: 22, height: 22, color: s.color }} />
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                {s.label}
-                            </div>
-                            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                                {s.value}
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Wallet + Tiers */}
-            <div className="dash-two-col" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
-                {/* Wallet Card */}
-                <div
-                    className="card"
-                    style={{
-                        padding: '32px',
-                        position: 'relative',
-                        overflow: 'hidden',
-                        background: 'linear-gradient(135deg, var(--accent-soft), var(--bg-card))',
-                    }}
-                >
-                    <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '200px', height: '200px', background: 'var(--accent-soft)', borderRadius: '50%', filter: 'blur(60px)', opacity: 0.6 }} />
-                    <div style={{ position: 'relative', zIndex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
-                            <Wallet style={{ width: 20, height: 20, color: 'var(--accent-text)' }} />
-                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Your Wallet
-                            </span>
-                        </div>
-                        <div style={{ fontSize: '2.8rem', fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.03em', lineHeight: 1 }}>
-                            ₹{wallet.balance.toLocaleString()}
-                        </div>
-                        <div className="badge-success" style={{ marginTop: '16px' }}>
-                            <Crown style={{ width: 14, height: 14 }} />
-                            {wallet.tier}
-                        </div>
-                        <div style={{ marginTop: '24px' }}>
-                            {!showTopup ? (
-                                <button onClick={() => setShowTopup(true)} className="btn-primary" style={{ padding: '10px 24px', fontSize: '0.9rem' }}>
-                                    <CreditCard style={{ width: 16, height: 16 }} />
-                                    Add Funds
-                                </button>
-                            ) : (
-                                <form onSubmit={handleTopup} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                    <input
-                                        type="number" value={topupAmount} onChange={(e) => setTopupAmount(e.target.value)}
-                                        className="input-field focus-ring" placeholder="Amount (₹)" min={1}
-                                        style={{ flex: 1, fontSize: '0.9rem' }} autoFocus
-                                    />
-                                    <button type="submit" className="btn-primary" style={{ padding: '12px 20px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>Add</button>
-                                    <button type="button" onClick={() => setShowTopup(false)} className="btn-secondary" style={{ padding: '12px 16px', fontSize: '0.85rem' }}>Cancel</button>
-                                </form>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Tier Info */}
-                <div className="card" style={{ padding: '32px' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '20px' }}>
-                        Bidding Tiers
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {tiers.map((tier: any) => {
-                            const isActive = wallet.tier === tier.name;
-                            const isUnlocked = wallet.balance >= tier.minBalance;
-                            return (
-                                <div
-                                    key={tier._id || tier.name}
-                                    style={{
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                        padding: '14px 16px', borderRadius: '12px',
-                                        background: isActive ? 'var(--accent-soft)' : 'var(--bg-input)',
-                                        border: `1px solid ${isActive ? 'var(--accent)' : 'var(--border-primary)'}`,
-                                        transition: 'all 0.2s',
-                                    }}
-                                >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                        <div style={{
-                                            width: '28px', height: '28px', borderRadius: '8px',
-                                            background: isUnlocked ? 'var(--success-soft)' : 'var(--bg-card-hover)',
-                                            color: isUnlocked ? 'var(--success)' : 'var(--text-muted)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        }}>
-                                            {isUnlocked ? <Check style={{ width: 14, height: 14 }} /> : <ChevronRight style={{ width: 14, height: 14 }} />}
-                                        </div>
-                                        <div>
-                                            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: isActive ? 'var(--accent-text)' : 'var(--text-primary)' }}>{tier.name}</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>≥ ₹{tier.minBalance.toLocaleString()} wallet</div>
-                                        </div>
-                                    </div>
-                                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: isActive ? 'var(--accent-text)' : 'var(--text-secondary)' }}>
-                                        ₹{tier.bidLimit.toLocaleString()} max
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            </div>
-
-            {/* Bid History / Won Items Tabs */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                {/* Tab bar */}
-                <div style={{ display: 'flex', borderBottom: '1px solid var(--border-primary)' }}>
-                    {[
-                        { key: 'bids' as const, label: 'My Bids', icon: Gavel },
-                        { key: 'won' as const, label: 'Won Items', icon: Trophy },
-                    ].map((tab) => (
-                        <button
-                            key={tab.key}
-                            onClick={() => setActiveTab(tab.key)}
-                            style={{
-                                flex: 1, padding: '16px', border: 'none', cursor: 'pointer',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                                fontSize: '0.9rem', fontWeight: 700,
-                                background: activeTab === tab.key ? 'var(--accent-soft)' : 'transparent',
-                                color: activeTab === tab.key ? 'var(--accent-text)' : 'var(--text-muted)',
-                                borderBottom: activeTab === tab.key ? '2px solid var(--accent)' : '2px solid transparent',
-                                transition: 'all 0.2s',
-                            }}
-                        >
-                            <tab.icon style={{ width: 16, height: 16 }} />
-                            {tab.label}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {(['overview', 'wallet', 'bids', 'auctions'] as const).map(tab => (
+                        <button key={tab} onClick={() => setActiveTab(tab)} style={tabBtnStyle(tab)}>
+                            {tab === 'overview' && <TrendingUp size={15} />}
+                            {tab === 'wallet' && <Wallet size={15} />}
+                            {tab === 'bids' && <Gavel size={15} />}
+                            {tab === 'auctions' && <Eye size={15} />}
+                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
                         </button>
                     ))}
                 </div>
+            </div>
 
-                <div style={{ padding: '24px' }}>
-                    {activeTab === 'bids' ? (
-                        buyerData?.bids?.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                {buyerData.bids.slice(0, 20).map((bid: any) => (
-                                    <div
-                                        key={bid._id}
-                                        style={{
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                            padding: '16px', borderRadius: '12px',
-                                            background: 'var(--bg-input)', border: '1px solid var(--border-primary)',
-                                            transition: 'border-color 0.2s',
-                                        }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-primary)'; }}
-                                    >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <div style={{
-                                                width: '40px', height: '40px', borderRadius: '10px',
-                                                background: bid.isTopBid ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            }}>
-                                                {bid.isTopBid
-                                                    ? <Trophy style={{ width: 18, height: 18, color: '#22c55e' }} />
-                                                    : <Gavel style={{ width: 18, height: 18, color: '#f59e0b' }} />
-                                                }
-                                            </div>
-                                            <div>
-                                                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                                                    {bid.item?.title || 'Unknown Item'}
+            {/* === OVERVIEW TAB === */}
+            {activeTab === 'overview' && (
+                <>
+                    {/* Stat Cards */}
+                    <div className="dash-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+                        {[
+                            { label: 'Wallet Balance', value: `₹${walletData?.balance?.toLocaleString() || 0}`, icon: <Wallet size={20} />, color: 'var(--accent)' },
+                            { label: 'Locked Deposits', value: `₹${totalLocked.toLocaleString()}`, icon: <Lock size={20} />, color: 'var(--warning)' },
+                            { label: 'Available Balance', value: `₹${(walletData?.availableBalance || 0).toLocaleString()}`, icon: <Coins size={20} />, color: 'var(--success)' },
+                            { label: 'Active Bids', value: activeBids.length, icon: <Gavel size={20} />, color: '#ec4899' },
+                        ].map((stat, i) => (
+                            <div key={i} className="card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                <div style={{
+                                    width: 44, height: 44, borderRadius: '12px',
+                                    background: `${stat.color}18`, display: 'flex',
+                                    alignItems: 'center', justifyContent: 'center', color: stat.color,
+                                }}>
+                                    {stat.icon}
+                                </div>
+                                <div>
+                                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500 }}>{stat.label}</p>
+                                    <p style={{ fontSize: '1.25rem', fontWeight: 800 }}>{stat.value}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Two Column: Wallet + Active Bids */}
+                    <div className="dash-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                        {/* Quick Topup */}
+                        <div className="card" style={{ padding: '24px' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                                <CreditCard size={18} style={{ color: 'var(--accent)' }} />
+                                Quick Top-up
+                            </h3>
+                            <form onSubmit={handleTopup} style={{ display: 'flex', gap: '10px' }}>
+                                <input
+                                    type="number"
+                                    className="input-field"
+                                    placeholder="Amount (₹)"
+                                    value={topupAmount}
+                                    onChange={e => setTopupAmount(e.target.value)}
+                                    min="1"
+                                    style={{ flex: 1 }}
+                                />
+                                <button type="submit" className="btn-primary" disabled={topupLoading}>
+                                    {topupLoading ? <Loader2 size={16} className="animate-spin" /> : 'Add'}
+                                </button>
+                            </form>
+                            <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {[100, 500, 1000, 5000].map(amt => (
+                                    <button key={amt} onClick={() => setTopupAmount(String(amt))}
+                                        className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem' }}>
+                                        ₹{amt}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Recent Active Bids */}
+                        <div className="card" style={{ padding: '24px' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                                <Gavel size={18} style={{ color: 'var(--accent)' }} />
+                                Active Bids
+                            </h3>
+                            {activeBids.length === 0 ? (
+                                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No active bids yet.</p>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {activeBids.slice(0, 5).map((bid: any) => (
+                                        <div key={bid._id} style={{
+                                            display: 'flex', flexDirection: 'column', gap: '8px',
+                                            padding: '14px 16px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)'
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                <div>
+                                                    <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '6px' }}>{bid.item?.title || 'Auction'}</p>
+
+                                                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                                                        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <TrendingUp size={12} /> Current Bid: ₹{bid.item?.currentPrice?.toLocaleString()}
+                                                        </p>
+                                                        <p style={{ color: 'var(--warning)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                                                            <Trophy size={12} /> Position: #{bid.position || '?'}
+                                                        </p>
+                                                    </div>
+
+                                                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                                        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <Gavel size={12} /> My Bid: ₹{bid.amount?.toLocaleString()} (Locked: ₹{bid.lockedDeposit?.toLocaleString()})
+                                                        </p>
+                                                        {bid.item?.endDate && (
+                                                            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                <Clock size={12} /> Ends: {new Date(bid.item.endDate).toLocaleDateString()} {new Date(bid.item.endDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                            </p>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                                    {bid.isTopBid ? '🏆 Highest Bid' : 'Outbid'} · {new Date(bid.createdAt).toLocaleDateString()}
-                                                </div>
                                             </div>
-                                        </div>
-                                        <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <div>
-                                                <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)' }}>
-                                                    ₹{bid.amount.toLocaleString()}
-                                                </div>
-                                            </div>
-                                            {bid.item && (
-                                                <Link
-                                                    href={`/auctions/${bid.item._id}`}
-                                                    style={{
-                                                        width: '36px', height: '36px', borderRadius: '10px',
-                                                        background: 'var(--accent-soft)', color: 'var(--accent-text)',
-                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                        textDecoration: 'none',
+                                            <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                                                <button
+                                                    className="btn-primary"
+                                                    style={{ flex: 1, padding: '6px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                                                    onClick={() => {
+                                                        setBidItem(bid.item);
+                                                        setQuickBidAmount((bid.item.currentPrice + 100).toString());
+                                                        setBidModalOpen(true);
                                                     }}
                                                 >
-                                                    <Eye style={{ width: 16, height: 16 }} />
+                                                    <PlusCircle size={14} /> Bid Now
+                                                </button>
+                                                <Link href={`/auctions/${bid.item?._id}`} style={{ flex: 1 }}>
+                                                    <button className="btn-secondary" style={{ width: '100%', padding: '6px 10px', fontSize: '0.8rem' }}>
+                                                        View Auction
+                                                    </button>
                                                 </Link>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Won Auctions */}
+                    {wonBids.length > 0 && (
+                        <div className="card" style={{ padding: '24px' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                                <Trophy size={18} style={{ color: 'var(--success)' }} />
+                                Won Auctions
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {wonBids.map((bid: any) => (
+                                    <div key={bid._id} style={{
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                        padding: '12px 14px', borderRadius: '12px', background: 'var(--success-soft)',
+                                    }}>
+                                        <div>
+                                            <p style={{ fontWeight: 600, fontSize: '0.88rem' }}>{bid.item?.title || 'Auction'}</p>
+                                            <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                                                Won at ₹{bid.amount?.toLocaleString()}
+                                            </p>
+                                        </div>
+                                        <span className="badge badge-success">🏆 Won</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
+
+            {/* === WALLET TAB === */}
+            {activeTab === 'wallet' && (
+                <>
+                    {/* Wallet Cards */}
+                    <div className="dash-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                        <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
+                            <Wallet size={28} style={{ color: 'var(--accent)', marginBottom: '8px' }} />
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Balance</p>
+                            <p style={{ fontSize: '1.5rem', fontWeight: 800 }}>₹{(walletData?.balance || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
+                            <Lock size={28} style={{ color: 'var(--warning)', marginBottom: '8px' }} />
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Locked (Security)</p>
+                            <p style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--warning)' }}>₹{totalLocked.toLocaleString()}</p>
+                        </div>
+                        <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
+                            <Coins size={28} style={{ color: 'var(--success)', marginBottom: '8px' }} />
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Available</p>
+                            <p style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success)' }}>
+                                ₹{(walletData?.availableBalance || 0).toLocaleString()}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Topup + Transactions */}
+                    <div className="dash-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
+                        {/* Topup Card */}
+                        <div className="card" style={{ padding: '24px' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '16px' }}>Add Money</h3>
+                            <form onSubmit={handleTopup} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <input type="number" className="input-field" placeholder="Enter amount (₹)"
+                                    value={topupAmount} onChange={e => setTopupAmount(e.target.value)} min="1" />
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    {[100, 500, 1000, 5000, 10000].map(amt => (
+                                        <button key={amt} type="button" onClick={() => setTopupAmount(String(amt))}
+                                            className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
+                                            ₹{amt.toLocaleString()}
+                                        </button>
+                                    ))}
+                                </div>
+                                <button type="submit" className="btn-primary" disabled={topupLoading} style={{ width: '100%' }}>
+                                    {topupLoading ? <Loader2 size={16} className="animate-spin" /> : 'Add to Wallet'}
+                                </button>
+                            </form>
+                        </div>
+
+                        {/* Transaction History */}
+                        <div className="card" style={{ padding: '24px' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                                <History size={18} style={{ color: 'var(--accent)' }} />
+                                Transaction History
+                            </h3>
+                            <div className="table-wrap">
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                                            <th style={{ padding: '8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Type</th>
+                                            <th style={{ padding: '8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Amount</th>
+                                            <th style={{ padding: '8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Description</th>
+                                            <th style={{ padding: '8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {transactions.length === 0 ? (
+                                            <tr><td colSpan={4} style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)' }}>No transactions yet</td></tr>
+                                        ) : transactions.map((tx: any) => (
+                                            <tr key={tx._id} style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                                                <td style={{ padding: '8px' }}>
+                                                    <span style={{
+                                                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                                        padding: '3px 10px', borderRadius: '8px', fontSize: '0.75rem',
+                                                        fontWeight: 700, color: getTypeColor(tx.type),
+                                                        background: `${getTypeColor(tx.type)}15`,
+                                                    }}>
+                                                        {getTypeIcon(tx.type)} {tx.type.toUpperCase()}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '8px', fontWeight: 700, color: ['credit', 'refund'].includes(tx.type) ? 'var(--success)' : 'var(--danger)' }}>
+                                                    {['credit', 'refund'].includes(tx.type) ? '+' : '-'}₹{tx.amount?.toLocaleString()}
+                                                </td>
+                                                <td style={{ padding: '8px', color: 'var(--text-secondary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {tx.description}
+                                                </td>
+                                                <td style={{ padding: '8px', color: 'var(--text-muted)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                                                    {formatDate(tx.createdAt)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* === BIDS TAB === */}
+            {activeTab === 'bids' && (
+                <div className="card" style={{ padding: '24px' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                        <Gavel size={18} style={{ color: 'var(--accent)' }} />
+                        All My Bids
+                    </h3>
+                    <div className="table-wrap">
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                                    <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Auction</th>
+                                    <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>My Bid</th>
+                                    <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Locked Deposit</th>
+                                    <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
+                                    <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Position</th>
+                                    <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Ends</th>
+                                    <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Date Placed</th>
+                                    <th style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 600 }}>View</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {myBids.length === 0 ? (
+                                    <tr><td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                        No bids placed yet. Browse auctions to start bidding!
+                                    </td></tr>
+                                ) : myBids.map((bid: any) => (
+                                    <tr key={bid._id} style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                                        <td style={{ padding: '10px', fontWeight: 600 }}>{bid.item?.title || '—'}</td>
+                                        <td style={{ padding: '10px', fontWeight: 700 }}>₹{bid.amount?.toLocaleString()}</td>
+                                        <td style={{ padding: '10px', color: 'var(--warning)', fontWeight: 600 }}>₹{bid.lockedDeposit?.toLocaleString()}</td>
+                                        <td style={{ padding: '10px' }}>
+                                            <span className={`badge ${bid.status === 'won' ? 'badge-success' :
+                                                bid.isTopBid && bid.item?.status !== 'Completed' ? 'badge-accent' :
+                                                    bid.status === 'refunded' ? 'badge-success' : 'badge-danger'
+                                                }`}>
+                                                {bid.status === 'won' ? '🏆 Won' :
+                                                    bid.isTopBid && bid.item?.status !== 'Completed' ? '🥇 Highest Bidder' :
+                                                        bid.status === 'refunded' ? '↩ Refunded' :
+                                                            '❌ Outbid'}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                            #{bid.position || '?'}
+                                        </td>
+                                        <td style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                                            {bid.item?.endDate ? new Date(bid.item.endDate).toLocaleDateString() : '—'}
+                                        </td>
+                                        <td style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                                            {formatDate(bid.createdAt)}
+                                        </td>
+                                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                                            {bid.item?._id && (
+                                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                                    {bid.item.status !== 'Completed' && new Date(bid.item.endDate) > new Date() && (
+                                                        <button
+                                                            onClick={() => {
+                                                                setBidItem(bid.item);
+                                                                setQuickBidAmount((bid.item.currentPrice + 100).toString());
+                                                                setBidModalOpen(true);
+                                                            }}
+                                                            className="btn-primary"
+                                                            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                                                        >
+                                                            Bid Now
+                                                        </button>
+                                                    )}
+                                                    <Link href={`/auctions/${bid.item._id}`}>
+                                                        <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }}>View</button>
+                                                    </Link>
+                                                </div>
                                             )}
-                                        </div>
-                                    </div>
+                                        </td>
+                                    </tr>
                                 ))}
-                            </div>
-                        ) : (
-                            <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                                <Gavel style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-                                <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No bids yet</p>
-                                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                    Start bidding on <Link href="/auctions" style={{ color: 'var(--accent-text)' }}>active auctions</Link>!
-                                </p>
-                            </div>
-                        )
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* === AUCTIONS TAB === */}
+            {activeTab === 'auctions' && (
+                <div>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                        <Eye size={18} style={{ color: 'var(--accent)' }} />
+                        Live Auctions
+                    </h3>
+                    {auctions.filter((a: any) => a.status === 'Active' && new Date(a.endDate) > new Date()).length === 0 ? (
+                        <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
+                            <AlertCircle size={32} style={{ color: 'var(--text-muted)', marginBottom: '12px' }} />
+                            <p style={{ color: 'var(--text-muted)' }}>No live auctions right now. Check back soon!</p>
+                        </div>
                     ) : (
-                        buyerData?.wonItems?.length > 0 ? (
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                                {buyerData.wonItems.map((item: any) => (
-                                    <div key={item._id} className="card" style={{ padding: '20px', overflow: 'hidden' }}>
-                                        <div style={{
-                                            height: '100px', borderRadius: '12px', marginBottom: '16px',
-                                            background: 'linear-gradient(135deg, var(--gradient-hero-1), var(--gradient-hero-2))',
-                                            position: 'relative',
-                                        }}>
-                                            <div className="badge-success" style={{ position: 'absolute', bottom: '8px', left: '8px' }}>
-                                                <Trophy style={{ width: 12, height: 12 }} /> Won
+                        <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
+                            {auctions.filter((a: any) => a.status === 'Active' && new Date(a.endDate) > new Date()).map((item: any) => {
+                                const timeLeft = new Date(item.endDate).getTime() - Date.now();
+                                const hoursLeft = Math.max(0, Math.floor(timeLeft / (1000 * 60 * 60)));
+                                const minsLeft = Math.max(0, Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60)));
+
+                                return (
+                                    <Link href={`/auctions/${item._id}`} key={item._id} style={{ textDecoration: 'none', color: 'inherit' }}>
+                                        <div className="card" style={{ padding: '20px', cursor: 'pointer', transition: 'transform 0.2s' }}>
+                                            {item.images?.[0] && (
+                                                <div style={{ borderRadius: '12px', overflow: 'hidden', marginBottom: '12px', height: '160px', background: '#0a0a0a' }}>
+                                                    <img src={item.images[0]} alt={item.title}
+                                                        style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }} />
+                                                </div>
+                                            )}
+                                            <h4 style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '6px' }}>{item.title}</h4>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                                <div>
+                                                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Current Bid</p>
+                                                    <p style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent)' }}>
+                                                        ₹{item.currentPrice?.toLocaleString()}
+                                                    </p>
+                                                </div>
+                                                <div style={{ textAlign: 'right' }}>
+                                                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Deposit</p>
+                                                    <p style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--warning)' }}>
+                                                        {item.securityPercentage || 5}%
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div style={{
+                                                display: 'flex', alignItems: 'center', gap: '6px',
+                                                padding: '6px 10px', borderRadius: '8px',
+                                                background: timeLeft < 3600000 ? 'var(--danger-soft)' : 'var(--bg-secondary)',
+                                                color: timeLeft < 3600000 ? 'var(--danger)' : 'var(--text-muted)',
+                                                fontSize: '0.78rem', fontWeight: 600,
+                                            }}>
+                                                <Clock size={13} />
+                                                {hoursLeft}h {minsLeft}m left
                                             </div>
                                         </div>
-                                        <h3 style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                                            {item.title}
-                                        </h3>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <Coins style={{ width: 16, height: 16, color: 'var(--accent-text)' }} />
-                                                <span style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--text-primary)' }}>
-                                                    ₹{item.currentPrice.toLocaleString()}
-                                                </span>
-                                            </div>
-                                            <Link
-                                                href={`/auctions/${item._id}`}
-                                                style={{
-                                                    width: '34px', height: '34px', borderRadius: '10px',
-                                                    background: 'var(--accent-soft)', color: 'var(--accent-text)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    textDecoration: 'none',
-                                                }}
-                                            >
-                                                <ArrowUpRight style={{ width: 16, height: 16 }} />
-                                            </Link>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                                <Trophy style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-                                <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No items won yet</p>
-                                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                    Keep bidding to win exclusive memorabilia!
-                                </p>
-                            </div>
-                        )
+                                    </Link>
+                                );
+                            })}
+                        </div>
                     )}
                 </div>
-            </div>
+            )}
+            {/* === QUICK BID MODAL === */}
+            {bidModalOpen && bidItem && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)'
+                }}>
+                    <div className="card animate-slide-up" style={{ width: '90%', maxWidth: '400px', padding: '24px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Quick Bid</h3>
+                            <button onClick={() => setBidModalOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>✕</button>
+                        </div>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '8px' }}>
+                            <strong>Item:</strong> {bidItem.title}
+                        </p>
+                        <p style={{ color: 'var(--success)', fontSize: '0.9rem', marginBottom: '20px', fontWeight: 700 }}>
+                            <strong>Current Price:</strong> ₹{bidItem.currentPrice?.toLocaleString()}
+                        </p>
+
+                        <form onSubmit={handleQuickBidSubmit}>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                Your Bid Amount (₹)
+                            </label>
+                            <input
+                                type="number"
+                                className="input-field"
+                                value={quickBidAmount}
+                                onChange={(e) => setQuickBidAmount(e.target.value)}
+                                min={bidItem.currentPrice + 1}
+                                required
+                                style={{ marginBottom: '20px', fontSize: '1.2rem', padding: '14px' }}
+                            />
+                            <button type="submit" className="btn-primary" style={{ width: '100%', padding: '14px' }} disabled={bidding}>
+                                {bidding ? <Loader2 size={18} className="animate-spin" /> : 'Confirm Bid'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
