@@ -24,7 +24,48 @@ const ItemSchema = new mongoose.Schema(
             type: String,
             enum: ['Draft', 'Active', 'Completed', 'Cancelled'],
             default: 'Active',
-        }
+        },
+        // Post-auction payment tracking
+        winnerPaymentStatus: {
+            type: String,
+            enum: ['pending', 'paid', 'failed'],
+            default: 'pending',
+        },
+        lastPaymentReminder: { type: Date },
+        paymentMethod: {
+            type: String,
+            enum: ['cash', 'online', 'bank_transfer'],
+        },
+        paymentCompletedAt: { type: Date },
+        razorpayOrderId: { type: String },
+        razorpayPaymentId: { type: String },
+        // Buyer's shipping address for delivery
+        shippingAddress: {
+            fullName: { type: String },
+            phone: { type: String },
+            addressLine: { type: String },
+            city: { type: String },
+            state: { type: String },
+            pincode: { type: String },
+        },
+        // Second-chance offer status: 'closed' (default) or 'open' (seller activated)
+        secondChanceStatus: {
+            type: String,
+            enum: ['closed', 'open'],
+            default: 'closed',
+        },
+        secondChanceNotifiedAt: { type: Date },
+        // Second-chance offers submitted by runner-up bidders
+        secondChanceOffers: [{
+            userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            userName: { type: String },
+            userEmail: { type: String },
+            originalBid: { type: Number },
+            offerPrice: { type: Number },
+            percentageAdjustment: { type: Number },
+            sentAt: { type: Date },
+            status: { type: String, enum: ['pending', 'accepted', 'rejected', 'expired'], default: 'pending' },
+        }]
     },
     { timestamps: true }
 );

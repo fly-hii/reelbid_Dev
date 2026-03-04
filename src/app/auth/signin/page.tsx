@@ -172,7 +172,7 @@ export default function SignIn() {
                     maxWidth: '440px',
                     background: 'var(--bg-card)',
                     border: '1px solid var(--border-primary)',
-                    borderRadius: '24px',
+                    borderRadius: 'var(--radius-lg)',
                     padding: '40px 32px',
                     boxShadow: 'var(--shadow-floating)',
                     position: 'relative',
@@ -180,28 +180,28 @@ export default function SignIn() {
                 }}
             >
                 {/* Top accent line */}
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, var(--accent), #ec4899)' }} />
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'var(--gradient-primary)' }} />
 
                 {/* Header */}
                 <div style={{ textAlign: 'center', marginBottom: '28px' }}>
                     <div
                         style={{
-                            width: '52px',
-                            height: '52px',
-                            borderRadius: '14px',
-                            background: 'linear-gradient(135deg, var(--accent), #ec4899)',
+                            width: '56px',
+                            height: '56px',
+                            borderRadius: 'var(--radius-md)',
+                            background: 'var(--gradient-primary)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             color: '#fff',
                             margin: '0 auto 16px',
-                            boxShadow: '0 4px 16px rgba(124, 58, 237, 0.25)',
+                            boxShadow: '0 8px 24px rgba(139, 92, 246, 0.3)',
                         }}
                     >
-                        <Film style={{ width: 24, height: 24 }} />
+                        <Film style={{ width: 26, height: 26 }} />
                     </div>
-                    <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                        Welcome Back
+                    <h2 style={{ fontSize: '1.7rem', fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>
+                        Welcome <span className="gradient-text">Back</span>
                     </h2>
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '6px' }}>
                         Sign in to bid on movie memorabilia

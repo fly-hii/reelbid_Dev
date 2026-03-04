@@ -212,7 +212,7 @@ export default function Register() {
                     maxWidth: '480px',
                     background: 'var(--bg-card)',
                     border: '1px solid var(--border-primary)',
-                    borderRadius: '24px',
+                    borderRadius: 'var(--radius-lg)',
                     padding: '40px 32px',
                     boxShadow: 'var(--shadow-floating)',
                     position: 'relative',
@@ -220,28 +220,28 @@ export default function Register() {
                 }}
             >
                 {/* Top accent line */}
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, var(--accent), #ec4899)' }} />
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'var(--gradient-primary)' }} />
 
                 {/* Header */}
                 <div style={{ textAlign: 'center', marginBottom: '32px' }}>
                     <div
                         style={{
-                            width: '56px',
-                            height: '56px',
-                            borderRadius: '16px',
-                            background: 'linear-gradient(135deg, var(--accent), #ec4899)',
+                            width: '60px',
+                            height: '60px',
+                            borderRadius: 'var(--radius-md)',
+                            background: 'var(--gradient-primary)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             color: '#fff',
                             margin: '0 auto 16px',
-                            boxShadow: '0 4px 20px rgba(124, 58, 237, 0.3)',
+                            boxShadow: '0 8px 24px rgba(139, 92, 246, 0.3)',
                         }}
                     >
                         <Film style={{ width: 28, height: 28 }} />
                     </div>
-                    <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                        Create Your Account
+                    <h2 style={{ fontSize: '1.7rem', fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>
+                        Create Your <span className="gradient-text">Account</span>
                     </h2>
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '6px' }}>
                         Join ReelBid and bid on exclusive movie memorabilia

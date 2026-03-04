@@ -3,7 +3,7 @@ import connectDB from '@/lib/db';
 import Item from '@/models/Item';
 import Bid from '@/models/Bid';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 
 // Get seller's own items and stats
 export async function GET() {

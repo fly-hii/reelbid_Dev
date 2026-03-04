@@ -18,9 +18,14 @@ export default function AdminDashboard() {
     const [items, setItems] = useState<any[]>([]);
     const [tiers, setTiers] = useState<any[]>([]);
     const [transactions, setTransactions] = useState<any[]>([]);
+    const [withdrawRequests, setWithdrawRequests] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeSection, setActiveSection] = useState<'overview' | 'sellers' | 'buyers' | 'auctions' | 'wallet' | 'tiers'>('overview');
+    const [activeSection, setActiveSection] = useState<'overview' | 'sellers' | 'buyers' | 'auctions' | 'wallet' | 'withdrawals' | 'tiers'>('overview');
     const [searchText, setSearchText] = useState('');
+
+    useEffect(() => {
+        setSearchText('');
+    }, [activeSection]);
 
     // Tier form
     const [tierForm, setTierForm] = useState({ name: '', minBalance: '', bidLimit: '', order: '' });
@@ -30,19 +35,21 @@ export default function AdminDashboard() {
 
     const fetchAll = async () => {
         try {
-            const [statsRes, tiersRes, txRes] = await Promise.all([
+            const [statsRes, tiersRes, txRes, withdrawalsRes] = await Promise.all([
                 fetch('/api/admin/stats'),
                 fetch('/api/admin/tiers'),
                 fetch('/api/wallet/transactions?limit=50'),
+                fetch('/api/admin/withdrawals'),
             ]);
-            const [statsData, tiersData, txData] = await Promise.all([
-                statsRes.json(), tiersRes.json(), txRes.json(),
+            const [statsData, tiersData, txData, withdrawalsData] = await Promise.all([
+                statsRes.json(), tiersRes.json(), txRes.json(), withdrawalsRes.json()
             ]);
             setStats(statsData.stats);
             setUsers(statsData.users || []);
             setItems(statsData.items || []);
             setTiers(Array.isArray(tiersData) ? tiersData : []);
             setTransactions(txData.transactions || []);
+            setWithdrawRequests(Array.isArray(withdrawalsData) ? withdrawalsData : []);
         } catch { }
         setLoading(false);
     };
@@ -121,6 +128,29 @@ export default function AdminDashboard() {
         } catch (err: any) { toast.error(err.message); }
     };
 
+    const handleWithdrawalAction = async (id: string, status: 'approved' | 'rejected') => {
+        let adminNotes = '';
+        if (status === 'rejected') {
+            const reason = prompt('Reason for rejection:');
+            if (reason === null) return; // user cancelled
+            adminNotes = reason;
+        } else {
+            if (!confirm('Are you sure you want to change this withdrawal request status to Approved? Did you manually transfer the money outside of ReelBid?')) return;
+        }
+
+        try {
+            const res = await fetch(`/api/admin/withdrawals/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, adminNotes }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            toast.success(`Withdrawal ${status}`);
+            fetchAll();
+        } catch (err: any) { toast.error(err.message); }
+    };
+
     if (loading) {
         return (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
@@ -149,19 +179,26 @@ export default function AdminDashboard() {
     const filteredUsers = (activeSection === 'sellers' ? sellers : activeSection === 'buyers' ? buyers : users)
         .filter(u => !searchText || u.name?.toLowerCase().includes(searchText.toLowerCase()) || u.email?.toLowerCase().includes(searchText.toLowerCase()));
 
+    const filteredItems = items.filter(item => !searchText || item.title?.toLowerCase().includes(searchText.toLowerCase()) || item.seller?.name?.toLowerCase().includes(searchText.toLowerCase()));
+
+    const filteredTransactions = transactions.filter(tx => !searchText || tx.user?.name?.toLowerCase().includes(searchText.toLowerCase()) || tx.description?.toLowerCase().includes(searchText.toLowerCase()) || tx.type?.toLowerCase().includes(searchText.toLowerCase()));
+
+    const filteredWithdrawRequests = withdrawRequests.filter(wr => !searchText || (wr.user?.name || '').toLowerCase().includes(searchText.toLowerCase()) || wr.bankName?.toLowerCase().includes(searchText.toLowerCase()));
+
     const sidebarItems = [
         { key: 'overview', label: 'Overview', icon: <TrendingUp size={18} /> },
         { key: 'sellers', label: `Sellers (${sellers.length})`, icon: <Store size={18} /> },
         { key: 'buyers', label: `Buyers (${buyers.length})`, icon: <ShoppingBag size={18} /> },
         { key: 'auctions', label: `Auctions (${items.length})`, icon: <Gavel size={18} /> },
         { key: 'wallet', label: 'Wallet Logs', icon: <Wallet size={18} /> },
+        { key: 'withdrawals', label: 'Withdrawals', icon: <ArrowUpFromLine size={18} /> },
         { key: 'tiers', label: 'Tier Rules', icon: <Crown size={18} /> },
     ];
 
     return (
         <div style={{ display: 'flex', gap: '24px', minHeight: '70vh' }}>
             {/* Sidebar */}
-            <div style={{
+            <div className="dash-sidebar" style={{
                 width: '220px', flexShrink: 0,
                 display: 'flex', flexDirection: 'column', gap: '4px',
             }}>
@@ -326,7 +363,15 @@ export default function AdminDashboard() {
                 {/* === AUCTIONS === */}
                 {activeSection === 'auctions' && (
                     <>
-                        <h2 style={{ fontWeight: 700 }}>All Auctions</h2>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ fontWeight: 700 }}>All Auctions</h2>
+                            <div style={{ position: 'relative' }}>
+                                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input className="input-field" placeholder="Search auctions..."
+                                    value={searchText} onChange={e => setSearchText(e.target.value)}
+                                    style={{ paddingLeft: '36px', width: '240px' }} />
+                            </div>
+                        </div>
                         <div className="table-wrap">
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                                 <thead>
@@ -342,7 +387,9 @@ export default function AdminDashboard() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {items.map((item: any) => {
+                                    {filteredItems.length === 0 ? (
+                                        <tr><td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No auctions found</td></tr>
+                                    ) : filteredItems.map((item: any) => {
                                         const isActive = item.status === 'Active' && new Date(item.endDate) > new Date();
                                         return (
                                             <tr key={item._id} style={{ borderBottom: '1px solid var(--border-primary)' }}>
@@ -379,10 +426,18 @@ export default function AdminDashboard() {
                 {/* === WALLET LOGS === */}
                 {activeSection === 'wallet' && (
                     <>
-                        <h2 style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Wallet size={22} style={{ color: 'var(--accent)' }} />
-                            Wallet Transaction Logs
-                        </h2>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <h2 style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Wallet size={22} style={{ color: 'var(--accent)' }} />
+                                Wallet Transaction Logs
+                            </h2>
+                            <div style={{ position: 'relative' }}>
+                                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input className="input-field" placeholder="Search logs..."
+                                    value={searchText} onChange={e => setSearchText(e.target.value)}
+                                    style={{ paddingLeft: '36px', width: '240px' }} />
+                            </div>
+                        </div>
                         <div className="table-wrap card" style={{ padding: '20px' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                                 <thead>
@@ -396,9 +451,9 @@ export default function AdminDashboard() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {transactions.length === 0 ? (
-                                        <tr><td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No transactions</td></tr>
-                                    ) : transactions.map((tx: any) => (
+                                    {filteredTransactions.length === 0 ? (
+                                        <tr><td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No transactions found</td></tr>
+                                    ) : filteredTransactions.map((tx: any) => (
                                         <tr key={tx._id} style={{ borderBottom: '1px solid var(--border-primary)' }}>
                                             <td style={{ padding: '10px', fontWeight: 600 }}>{tx.user?.name || '—'}</td>
                                             <td style={{ padding: '10px' }}>
@@ -426,6 +481,82 @@ export default function AdminDashboard() {
                                             </td>
                                             <td style={{ padding: '10px', color: 'var(--text-muted)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
                                                 {formatDate(tx.createdAt)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
+
+                {/* === WITHDRAWALS === */}
+                {activeSection === 'withdrawals' && (
+                    <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <ArrowUpFromLine size={22} style={{ color: 'var(--accent)' }} />
+                                User Withdrawal Requests
+                            </h2>
+                            <div style={{ position: 'relative' }}>
+                                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input className="input-field" placeholder="Search requests..."
+                                    value={searchText} onChange={e => setSearchText(e.target.value)}
+                                    style={{ paddingLeft: '36px', width: '240px' }} />
+                            </div>
+                        </div>
+                        <div className="table-wrap card" style={{ padding: '20px' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '2px solid var(--border-primary)' }}>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Date</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>User</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Amount</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Bank Details</th>
+                                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
+                                        <th style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 600 }}>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredWithdrawRequests.length === 0 ? (
+                                        <tr><td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No withdraw requests found</td></tr>
+                                    ) : filteredWithdrawRequests.map((wr: any) => (
+                                        <tr key={wr._id} style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                                            <td style={{ padding: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                                {formatDate(wr.createdAt)}
+                                            </td>
+                                            <td style={{ padding: '10px', fontWeight: 600 }}>
+                                                {wr.user?.name || '—'}<br />
+                                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>{wr.user?.phone || wr.user?.email || ''}</span>
+                                            </td>
+                                            <td style={{ padding: '10px', fontWeight: 700, fontSize: '0.9rem' }}>
+                                                ₹{wr.amount?.toLocaleString()}
+                                            </td>
+                                            <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>
+                                                <strong>{wr.bankName}</strong><br />
+                                                Name: {wr.accountName}<br />
+                                                A/c: {wr.accountNumber}<br />
+                                                IFSC: {wr.ifscCode}
+                                            </td>
+                                            <td style={{ padding: '10px' }}>
+                                                <span className={`badge ${wr.status === 'pending' ? 'badge-warning' : wr.status === 'approved' ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem' }}>
+                                                    {wr.status.toUpperCase()}
+                                                </span>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>{wr.adminNotes}</div>
+                                            </td>
+                                            <td style={{ padding: '10px', textAlign: 'center' }}>
+                                                {wr.status === 'pending' && (
+                                                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                                                        <button onClick={() => handleWithdrawalAction(wr._id, 'approved')}
+                                                            className="btn-primary" style={{ padding: '5px 10px', fontSize: '0.75rem', background: 'var(--success)' }}>
+                                                            Approve
+                                                        </button>
+                                                        <button onClick={() => handleWithdrawalAction(wr._id, 'rejected')}
+                                                            className="btn-primary" style={{ padding: '5px 10px', fontSize: '0.75rem', background: 'var(--danger)' }}>
+                                                            Reject
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}

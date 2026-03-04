@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Item from '@/models/Item';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
+import { validateFields } from '@/lib/profanityFilter';
 
 export async function GET(req: Request) {
     try {
@@ -63,6 +64,12 @@ export async function POST(req: Request) {
         const secPct = body.securityPercentage ?? 5;
         if (secPct < 1 || secPct > 50) {
             return NextResponse.json({ error: 'Security percentage must be between 1% and 50%' }, { status: 400 });
+        }
+
+        // Check for profanity in title & description
+        const profanityError = validateFields({ Title: body.title || '', Description: body.description || '' });
+        if (profanityError) {
+            return NextResponse.json({ error: profanityError }, { status: 400 });
         }
 
         const item = await Item.create({

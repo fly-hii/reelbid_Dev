@@ -3,7 +3,7 @@ import connectDB from '@/lib/db';
 import Bid from '@/models/Bid';
 import Item from '@/models/Item';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 
 // Get buyer's bid history and won items
 export async function GET() {

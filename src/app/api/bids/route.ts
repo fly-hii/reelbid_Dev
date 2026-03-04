@@ -5,8 +5,9 @@ import Item from '@/models/Item';
 import Bid from '@/models/Bid';
 import WalletTransaction from '@/models/WalletTransaction';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 import { sendExtensionEmail } from '@/lib/emails';
+import { assertWalletIntegrity, resignWallet } from '@/lib/walletIntegrity';
 
 // GET top bids for an item
 export async function GET(req: Request) {
@@ -67,6 +68,9 @@ export async function POST(req: Request) {
 
         const user = await User.findById((session.user as any).id);
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+
+        // ── Verify wallet integrity before any balance operation ──
+        assertWalletIntegrity(user);
 
         if (user.role !== 'Buyer') {
             return NextResponse.json({ error: 'Only buyers can place bids' }, { status: 403 });
@@ -162,6 +166,8 @@ export async function POST(req: Request) {
         // ========================================
         if (additionalNeeded > 0) {
             user.lockedBalance = (user.lockedBalance || 0) + additionalNeeded;
+            // ── Re-sign wallet hash after locking ──
+            resignWallet(user);
             await user.save();
 
             // record the lock transaction

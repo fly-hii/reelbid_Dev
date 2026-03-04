@@ -5,7 +5,8 @@ import Item from '@/models/Item';
 import Bid from '@/models/Bid';
 import WalletTransaction from '@/models/WalletTransaction';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
+import { assertWalletIntegrity, resignWallet } from '@/lib/walletIntegrity';
 
 /**
  * POST /api/auctions/complete
@@ -67,6 +68,12 @@ export async function POST(req: Request) {
             const bidder = await User.findById(bidderId);
             if (!bidder) continue;
 
+            // ── Verify wallet integrity before any balance mutation ──
+            try { assertWalletIntegrity(bidder); } catch (e) {
+                console.error(`Skipping bidder ${bidderId}: wallet integrity failed`);
+                continue;
+            }
+
             if (bidderId === winnerId) {
                 // ========================================
                 // WINNER: Adjust deposit into final payment
@@ -83,23 +90,10 @@ export async function POST(req: Request) {
                 // Unlock the deposit locally
                 bidder.lockedBalance = Math.max(0, (bidder.lockedBalance || 0) - winnerDeposit);
 
-                // Deduct the full final item price from wallet balance
-                bidder.walletBalance = Math.max(0, bidder.walletBalance - item.currentPrice);
+                // Deduct the deposit amount from the wallet balance (it's consumed)
+                bidder.walletBalance = Math.max(0, bidder.walletBalance - winnerDeposit);
 
-                // Record the remaining payment outside of deposit tracking
-                if (remainingPayment > 0) {
-                    await WalletTransaction.create({
-                        user: bidderId,
-                        type: 'payment',
-                        amount: remainingPayment,
-                        description: `Final payment for winning "${item.title}" (₹${item.currentPrice} - ₹${winnerDeposit} deposit)`,
-                        auction: item._id,
-                        balanceAfter: bidder.walletBalance + winnerDeposit,
-                        lockedAfter: bidder.lockedBalance,
-                    });
-                }
-
-                // Also record the deposit extraction
+                // Record the deposit extraction from the wallet
                 await WalletTransaction.create({
                     user: bidderId,
                     type: 'debit',
@@ -110,6 +104,8 @@ export async function POST(req: Request) {
                     lockedAfter: bidder.lockedBalance,
                 });
 
+                // ── Re-sign wallet hash after mutation ──
+                resignWallet(bidder);
                 await bidder.save();
             } else {
                 // ========================================
@@ -118,6 +114,8 @@ export async function POST(req: Request) {
                 const refundAmount = data.totalLocked;
                 if (refundAmount > 0) {
                     bidder.lockedBalance = Math.max(0, (bidder.lockedBalance || 0) - refundAmount);
+                    // ── Re-sign wallet hash after mutation ──
+                    resignWallet(bidder);
                     await bidder.save();
 
                     await WalletTransaction.create({

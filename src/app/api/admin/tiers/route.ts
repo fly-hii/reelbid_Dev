@@ -3,7 +3,7 @@ import connectDB from '@/lib/db';
 import Tier from '@/models/Tier';
 import User from '@/models/User';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 
 // Middleware: check admin
 async function checkAdmin() {

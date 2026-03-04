@@ -4,7 +4,8 @@ import User from '@/models/User';
 import Tier from '@/models/Tier';
 import WalletTransaction from '@/models/WalletTransaction';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
+import { assertWalletIntegrity, resignWallet } from '@/lib/walletIntegrity';
 
 // Helper: compute tier from dynamic tier settings
 async function computeTier(balance: number): Promise<string> {
@@ -31,6 +32,7 @@ export async function GET(req: Request) {
         const user = await User.findById((session.user as any).id);
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
+        // All balance values come from DB only — never from client
         const result: any = {
             balance: user.walletBalance,
             lockedBalance: user.lockedBalance || 0,
@@ -61,7 +63,15 @@ export async function POST(req: Request) {
         }
 
         const { amount } = await req.json();
-        if (typeof amount !== 'number' || amount <= 0) {
+
+        // ── Server-side amount validation ──
+        if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+            return NextResponse.json({ error: 'Invalid topup amount' }, { status: 400 });
+        }
+        // Cap single topup to prevent abuse; round to integer
+        const MAX_TOPUP = 500000; // ₹5,00,000 max single topup
+        const sanitizedAmount = Math.min(Math.round(amount), MAX_TOPUP);
+        if (sanitizedAmount <= 0) {
             return NextResponse.json({ error: 'Invalid topup amount' }, { status: 400 });
         }
 
@@ -69,16 +79,23 @@ export async function POST(req: Request) {
         const user = await User.findById((session.user as any).id);
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-        user.walletBalance += amount;
+        // ── Verify wallet integrity BEFORE mutation ──
+        assertWalletIntegrity(user);
+
+        // Mutate the balance (server-side only, never trust client balance)
+        user.walletBalance += sanitizedAmount;
         user.tier = await computeTier(user.walletBalance);
+
+        // ── Re-sign wallet hash after mutation ──
+        resignWallet(user);
         await user.save();
 
         // Record the credit transaction
         await WalletTransaction.create({
             user: user._id,
             type: 'credit',
-            amount,
-            description: `Wallet top-up of ₹${amount}`,
+            amount: sanitizedAmount,
+            description: `Wallet top-up of ₹${sanitizedAmount}`,
             balanceAfter: user.walletBalance,
             lockedAfter: user.lockedBalance || 0,
         });

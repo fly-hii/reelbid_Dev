@@ -15,6 +15,7 @@ const UserSchema = new mongoose.Schema(
         },
         walletBalance: { type: Number, default: 0 },
         lockedBalance: { type: Number, default: 0 }, // total security deposits locked
+        walletHash: { type: String }, // HMAC-SHA256 integrity hash for wallet balance
         tier: {
             type: String,
             default: 'None',
