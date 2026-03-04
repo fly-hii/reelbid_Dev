@@ -1,0 +1,1084 @@
+
+---
+
+<div align="center">
+
+# **ReelBid — Premium Movie Memorabilia Auction Platform**
+
+### *Client Approval Document*
+
+**Version:** 1.0  
+**Date:** 4 March 2026  
+**Prepared by:** ReelBid Development Team  
+**Status:** Awaiting Client Approval
+
+---
+
+</div>
+
+---
+
+## Table of Contents
+
+1. [Executive Summary](#1-executive-summary)
+2. [Project Overview](#2-project-overview)
+3. [Technology Stack](#3-technology-stack)
+4. [System Architecture](#4-system-architecture)
+5. [Data Models & Database Schema](#5-data-models--database-schema)
+6. [User Roles & Access Control](#6-user-roles--access-control)
+7. [Role-Based Workflow — Buyer](#7-role-based-workflow--buyer)
+8. [Role-Based Workflow — Seller](#8-role-based-workflow--seller)
+9. [Role-Based Workflow — Admin](#9-role-based-workflow--admin)
+10. [Detailed Feature Workflows](#10-detailed-feature-workflows)
+11. [Security & Integrity Mechanisms](#11-security--integrity-mechanisms)
+12. [API Endpoints Reference](#12-api-endpoints-reference)
+13. [Pages & Navigation Structure](#13-pages--navigation-structure)
+14. [Real-Time Communication](#14-real-time-communication)
+15. [Email Notification System](#15-email-notification-system)
+16. [Payment Integration](#16-payment-integration)
+17. [Appendix: Workflow Diagrams](#17-appendix-workflow-diagrams)
+
+---
+
+## 1. Executive Summary
+
+**ReelBid** is a full-stack, real-time online auction platform built specifically for **premium movie memorabilia**. The platform enables collectors (Buyers) to bid on exclusive items listed by verified sellers, with comprehensive administrative oversight ensuring platform integrity and trust.
+
+The platform operates on a **three-pillar role-based ecosystem**:
+- **Buyers** — Register, fund their wallet, browse auctions, place bids, and complete payments for won items.
+- **Sellers** — List authentic movie memorabilia, monitor auction progress, manage post-auction payment collection, and handle second-chance offers.
+- **Admins** — Oversee the entire platform including user management, role assignments, financial oversight, tier management, and withdrawal approvals.
+
+### Key Highlights
+| Feature | Description |
+|---|---|
+| **Real-Time Bidding** | WebSocket-powered live bid updates across all connected clients |
+| **Sniper Protection** | Automatic 1-hour auction extension if a bid arrives in the last 10 minutes |
+| **Wallet & Tier System** | Secure wallet with tier classification based on deposit balance (display/classification only — not enforced as bid limits) |
+| **HMAC Wallet Integrity** | Server-side cryptographic hash verification prevents balance tampering |
+| **Security Deposits** | Dynamic deposit calculation with automatic lock/unlock/refund workflows |
+| **Razorpay Integration** | Secure payment gateway for winner payment completion |
+| **Second-Chance Offers** | Seller can offer the item to runner-up bidders if the winner defaults |
+| **Profanity Filtering** | Comprehensive multi-language content filter (English + Hindi) |
+| **Email Notifications** | Automated emails for payment reminders, auction extensions, and second-chance offers |
+
+---
+
+## 2. Project Overview
+
+### 2.1 Purpose
+ReelBid aims to create a trusted marketplace for movie memorabilia collectors, ensuring authenticity through seller verification, fair bidding through anti-sniper protection, and financial safety through a secure wallet system with cryptographic integrity checks.
+
+### 2.2 Target Users
+| User Type | Description |
+|---|---|
+| **Collectors / Buyers** | Movie memorabilia enthusiasts looking to acquire rare props, costumes, posters, and other cinematic artifacts |
+| **Sellers** | Verified individuals or organizations possessing authentic movie memorabilia |
+| **Platform Administrators** | Internal staff managing platform operations, user roles, and financial workflows |
+
+### 2.3 Scope
+The platform covers the complete auction lifecycle:
+- User registration and profile completion
+- Wallet funding and tier assignment
+- Auction creation, real-time bidding, and completion
+- Post-auction payment collection (online via Razorpay or cash)
+- Security deposit management (lock, unlock, refund)
+- Withdrawal request and admin approval
+- Second-chance offer workflow for defaulting winners
+
+---
+
+## 3. Technology Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Framework** | Next.js 16.1.6 (React 19.2) | Full-stack React framework with SSR and API routes |
+| **Language** | TypeScript 5 | Type-safe JavaScript for both client and server |
+| **Database** | MongoDB (via Mongoose 9.2) | NoSQL document database for flexible schema |
+| **Authentication** | NextAuth.js 4.24 | OAuth (Google) + Credentials (OTP/Password) authentication |
+| **Real-Time** | Socket.IO 4.8 | WebSocket-based real-time bidding updates |
+| **Payments** | Razorpay 2.9 | Secure online payment gateway (INR) |
+| **Email** | Nodemailer 7.0 | Transactional email delivery for notifications |
+| **UI Components** | Lucide React 0.575 | Modern icon library |
+| **Animations** | Framer Motion 12.34 | UI animations and transitions |
+| **Styling** | Vanilla CSS with CSS Variables | Custom design system with dark/light theme support |
+| **State** | React Hot Toast 2.6 | Toast notifications for user feedback |
+| **Custom Server** | tsx + HTTP + Socket.IO | Custom Node.js server for WebSocket support alongside Next.js |
+
+---
+
+## 4. System Architecture
+
+```mermaid
+graph TB
+    subgraph Client["Frontend (React/Next.js)"]
+        HP["Home Page"]
+        AP["Auction Pages"]
+        BD["Buyer Dashboard"]
+        SD["Seller Dashboard"]
+        AD["Admin Dashboard"]
+        LB["Leaderboard"]
+        WP["Working Process"]
+    end
+
+    subgraph Server["Backend (Next.js API Routes)"]
+        AUTH["Auth API (NextAuth)"]
+        BIDS["Bids API"]
+        WALLET["Wallet API"]
+        ITEMS["Items API"]
+        ADMIN_API["Admin API"]
+        SELLER_API["Seller API"]
+        PAYMENT["Payment API"]
+        OTP_API["OTP API"]
+    end
+
+    subgraph Services["External Services"]
+        RAZORPAY["Razorpay Payment Gateway"]
+        SMTP["SMTP Email Server"]
+        GOOGLE["Google OAuth"]
+    end
+
+    subgraph Data["Data Layer"]
+        MONGO["MongoDB"]
+        SOCKET["Socket.IO Server"]
+    end
+
+    Client --> Server
+    Server --> MONGO
+    Server --> RAZORPAY
+    Server --> SMTP
+    AUTH --> GOOGLE
+    SOCKET --> Client
+    BIDS --> SOCKET
+```
+
+### 4.1 Architecture Pattern
+- **Monolithic Full-Stack**: Single Next.js application with API routes serving as the backend
+- **Custom Server**: HTTP server wraps Next.js with Socket.IO for real-time bidding
+- **JWT Sessions**: Stateless authentication using JSON Web Tokens
+- **Server-Side Validation**: All financial operations validated exclusively on the server
+- **HMAC Wallet Integrity**: Cryptographic hash verification on every wallet mutation
+
+---
+
+## 5. Data Models & Database Schema
+
+### 5.1 User Model
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | String (required) | Full name of the user |
+| `email` | String (required, unique) | Email address for authentication |
+| `password` | String (optional) | Hashed password (optional for Google OAuth) |
+| `phone` | String | Mobile number |
+| `image` | String | Profile image URL |
+| `role` | Enum: [Admin](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/dashboard/AdminDashboard.tsx#14-643), [Seller](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/dashboard/SellerDashboard.tsx#14-534), [Buyer](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/dashboard/BuyerDashboard.tsx#15-974) | User's role (default: Buyer) |
+| `walletBalance` | Number | Total wallet balance (₹) |
+| `lockedBalance` | Number | Amount locked as security deposits |
+| `walletHash` | String | HMAC-SHA256 integrity hash for balance verification |
+| `tier` | String | Assigned bidding tier (e.g., "Tier A", "None") |
+| `isApproved` | Boolean | Admin approval status for sellers |
+| `profileCompleted` | Boolean | Whether buyer has completed profile |
+| `address`, `city`, `state`, `pincode` | String | Shipping address fields |
+
+### 5.2 Item (Auction) Model
+
+| Field | Type | Description |
+|---|---|---|
+| `title` | String (required) | Auction item title |
+| `description` | String (required) | Detailed item description |
+| `images` | String[] | Array of image URLs |
+| `category` | String | Item category (default: "General") |
+| `startingPrice` | Number (required) | Base auction price |
+| `currentPrice` | Number | Current highest bid |
+| `securityPercentage` | Number (1-50%) | Security deposit percentage (default: 5%) |
+| `highestBidder` | ObjectId → User | Current highest bidder |
+| `winner` | ObjectId → User | Auction winner (set on completion) |
+| `finalAmount` | Number | Final winning amount |
+| `seller` | ObjectId → User (required) | Seller who listed the item |
+| `startDate` | Date (required) | Auction start date/time |
+| `endDate` | Date (required) | Auction end date/time |
+| `bidCount` | Number | Total number of bids |
+| `status` | Enum: `Draft`, `Active`, `Completed`, `Cancelled` | Auction lifecycle status |
+| `winnerPaymentStatus` | Enum: `pending`, `paid`, `failed` | Post-auction payment status |
+| `paymentMethod` | Enum: `cash`, `online`, `bank_transfer` | Payment method used |
+| `paymentCompletedAt` | Date | Payment completion timestamp |
+| `razorpayOrderId` | String | Razorpay order reference |
+| `razorpayPaymentId` | String | Razorpay payment reference |
+| `shippingAddress` | Object | Buyer's shipping address for delivery |
+| `secondChanceStatus` | Enum: `closed`, `open` | Second-chance offer availability |
+| `secondChanceOffers` | Array | Submitted second-chance offers from runner-ups |
+| `lastPaymentReminder` | Date | Last payment reminder sent timestamp |
+
+### 5.3 Bid Model
+
+| Field | Type | Description |
+|---|---|---|
+| `amount` | Number (required) | Bid amount in ₹ |
+| `user` | ObjectId → User (required) | Bidder reference |
+| `item` | ObjectId → Item (required) | Auction reference |
+| `isTopBid` | Boolean | Whether this is the current highest bid |
+| `lockedDeposit` | Number | Security deposit locked for this specific bid |
+| `depositRefunded` | Boolean | Whether the deposit has been refunded |
+| `status` | Enum: `active`, `outbid`, `won`, `lost`, `refunded` | Bid lifecycle status |
+
+### 5.4 Tier Model
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | String (required, unique) | Tier name (e.g., "Tier A") |
+| `minBalance` | Number (required) | Minimum wallet balance to qualify |
+| `bidLimit` | Number (required) | Maximum allowed bid amount |
+| `order` | Number | Sort order (higher = better tier) |
+
+### 5.5 WalletTransaction Model
+
+| Field | Type | Description |
+|---|---|---|
+| `user` | ObjectId → User (required) | Transaction owner |
+| `type` | Enum: `credit`, `debit`, `lock`, `unlock`, `refund`, `payment` | Transaction type |
+| `amount` | Number (required) | Transaction amount |
+| `description` | String | Human-readable description |
+| `auction` | ObjectId → Item | Linked auction (if applicable) |
+| `balanceAfter` | Number | Wallet balance after transaction |
+| `lockedAfter` | Number | Locked amount after transaction |
+| `status` | Enum: `completed`, `pending`, `failed` | Transaction status |
+
+### 5.6 WithdrawRequest Model
+
+| Field | Type | Description |
+|---|---|---|
+| `user` | ObjectId → User (required) | Requester |
+| `amount` | Number (required) | Withdrawal amount |
+| `bankName` | String (required) | Bank name |
+| `accountName` | String (required) | Account holder name |
+| `accountNumber` | String (required) | Bank account number (9-18 digits) |
+| `ifscCode` | String (required) | Bank IFSC code |
+| `status` | Enum: `pending`, `approved`, `rejected` | Approval status |
+| `adminNotes` | String | Admin notes (reason for rejection, etc.) |
+
+---
+
+## 6. User Roles & Access Control
+
+### 6.1 Role Hierarchy
+
+```mermaid
+graph TD
+    ADMIN["🛡️ Admin<br/>Full Platform Control"]
+    SELLER["🏪 Seller<br/>Auction Management"]
+    BUYER["🛒 Buyer<br/>Bidding & Collecting"]
+    
+    ADMIN -->|Promotes/Demotes| SELLER
+    ADMIN -->|Manages| BUYER
+    SELLER -->|Cannot self-register<br/>Requires admin approval| ADMIN
+    BUYER -->|Self-registration| BUYER
+```
+
+### 6.2 Permission Matrix
+
+| Permission | Buyer | Seller | Admin |
+|---|:---:|:---:|:---:|
+| Register / Sign In | ✅ | ✅ | ✅ |
+| Complete Profile | ✅ (Required) | ❌ | ❌ |
+| View Auctions | ✅ | ✅ | ✅ |
+| Place Bids | ✅ | ❌ | ❌ |
+| Fund Wallet (Top-up) | ✅ | ❌ | ❌ |
+| Withdraw Funds | ✅ | ❌ | ❌ |
+| Create Auctions | ❌ | ✅ | ❌ |
+| Edit Auctions | ❌ | ✅ (own) | ❌ |
+| Close Auctions (early) | ❌ | ✅ (own) | ✅ (any) |
+| View Winner Details | ❌ | ✅ (own auctions) | ✅ |
+| Send Payment Reminders | ❌ | ✅ (own auctions) | ✅ |
+| Mark as Paid (Cash) | ❌ | ✅ (own auctions) | ✅ |
+| Initiate Second-Chance | ❌ | ✅ (own auctions) | ✅ |
+| Submit Second-Chance Offer | ✅ (runner-ups) | ❌ | ❌ |
+| Manage Users (role change) | ❌ | ❌ | ✅ |
+| Delete Users | ❌ | ❌ | ✅ |
+| Manage Tiers | ❌ | ❌ | ✅ |
+| Approve/Reject Withdrawals | ❌ | ❌ | ✅ |
+| View Platform Statistics | ❌ | ❌ | ✅ |
+| View Wallet Flow | ❌ | ❌ | ✅ |
+| View Leaderboard | ✅ | ✅ | ✅ |
+
+---
+
+## 7. Role-Based Workflow — Buyer
+
+### 7.1 Registration & Onboarding
+
+```mermaid
+flowchart LR
+    A["Visit ReelBid"] --> B{"Choose Sign-Up Method"}
+    B -->|Google OAuth| C["Google Authentication"]
+    B -->|Email + OTP| D["Enter Email → Receive OTP → Verify"]
+    B -->|Email + Password| E["Enter Email & Password"]
+    C --> F["Account Created (Role: Buyer)"]
+    D --> F
+    E --> F
+    F --> G["Redirect to Profile Completion"]
+    G --> H["Enter Name, Address,<br/>City, State, Pincode, Phone"]
+    H --> I["Profile Complete ✅"]
+    I --> J["Access Buyer Dashboard"]
+```
+
+### 7.2 Wallet Management Workflow
+
+```mermaid
+flowchart TD
+    A["Buyer Dashboard"] --> B["Wallet Section"]
+    B --> C{"Action?"}
+    C -->|Top-Up| D["Enter Amount (₹1 - ₹5,00,000)"]
+    D --> E["Server validates, credits wallet"]
+    E --> F["HMAC hash re-signed"]
+    F --> G["Tier auto-computed"]
+    G --> H["WalletTransaction: credit recorded"]
+    
+    C -->|Withdraw| I["Enter Amount + Bank Details"]
+    I --> J["Server validates:<br/>• Min ₹100<br/>• IFSC format<br/>• Available balance check"]
+    J --> K["Amount deducted immediately"]
+    K --> L["HMAC hash re-signed"]
+    L --> M["WithdrawRequest: pending"]
+    M --> N["Admin reviews & approves/rejects"]
+    N -->|Approved| O["Funds transferred"]
+    N -->|Rejected| P["Amount refunded to wallet"]
+```
+
+#### 7.2.1 Tier System (Classification Only)
+
+Tiers are a **classification/display feature** assigned automatically based on wallet balance. Each tier has a `name`, `minBalance`, `bidLimit`, and `order` stored in the database. However, the `bidLimit` field is **NOT currently enforced** during bid placement — it exists in the data model for potential future enforcement.
+
+| Tier | Minimum Balance | Bid Limit (Not Enforced) |
+|---|---|---|
+| None | ₹0 | — |
+| Tier A (Example) | ₹100 | ₹10,000 |
+| Tier B (Example) | ₹500 | ₹1,00,000 |
+| Tier C (Example) | ₹1,000 | ₹10,00,000 |
+
+> [!NOTE]
+> Tiers are fully dynamic and configured by the Admin. The above values are illustrative defaults.
+> **Current Status:** Tiers are assigned on wallet top-up and displayed on user profiles/dashboards, but the `bidLimit` is not checked when placing bids. Bidding is restricted only by available wallet balance for security deposits.
+
+### 7.3 Bidding Workflow
+
+```mermaid
+flowchart TD
+    A["Browse Auctions"] --> B["Select Active Auction"]
+    B --> C["View Item Details,<br/>Current Price, Time Remaining"]
+    C --> D["Enter Bid Amount"]
+    D --> E{"Server Validation"}
+    E -->|"Bid ≤ Current Price"| F["❌ Bid must be higher"]
+    E -->|"Auction Ended"| G["❌ Auction has ended"]
+    E -->|"Seller's own item"| H["❌ Cannot bid on own item"]
+    E -->|"Insufficient Balance"| I["❌ Add funds"]
+    E -->|Valid| J["Calculate Security Deposit"]
+    
+    J --> K{"First Bid<br/>on this Auction?"}
+    K -->|Yes| L["Deposit = bid × security%"]
+    K -->|No| M["Progressive doubling formula<br/>+ extra for amounts > ₹80K"]
+    L --> N["Lock deposit from wallet"]
+    M --> N
+    N --> O["HMAC re-signed"]
+    O --> P["Previous top bid marked 'outbid'"]
+    P --> Q["New bid created (isTopBid: true)"]
+    Q --> R["Item currentPrice updated"]
+    R --> S{"Bid in last 10 min?"}
+    S -->|Yes| T["🛡️ Sniper Protection:<br/>Extend auction by 1 hour"]
+    S -->|No| U["Broadcast via WebSocket"]
+    T --> V["Email top 10 bidders"]
+    V --> U
+```
+
+#### 7.3.1 Dynamic Security Deposit Calculation
+
+The security deposit system prevents frivolous bidding:
+
+**For First-Time Bids on an Auction:**
+- If bid ≤ ₹80,000: `Deposit = ceil(bid × security%)`
+- If bid > ₹80,000: `Base = ceil(80,000 × security%) + extra for each ₹10,000 step above ₹80K`
+
+**For Subsequent Bids (Same Auction):**
+- Uses a **progressive doubling** formula based on bid ratio to the first bid
+- Additional deposits calculated only for the difference above what is already locked
+- Already-locked amounts are subtracted from the newly required deposit
+
+### 7.4 Post-Auction Payment Workflow (Winner)
+
+```mermaid
+flowchart TD
+    A["Auction Completed"] --> B["Winner Declared"]
+    B --> C["Security deposit adjusted<br/>into payment"]
+    C --> D["Remaining amount calculated:<br/>Winning Price − Locked Deposit"]
+    D --> E{"Remaining > 0?"}
+    E -->|Yes| F["Enter Shipping Address"]
+    F --> G["Profanity check on address"]
+    G --> H["Razorpay order created"]
+    H --> I["Complete online payment"]
+    I --> J["Razorpay signature verified"]
+    J --> K["Payment status: PAID ✅"]
+    
+    E -->|No| L["Fully covered by deposit"]
+    
+    K --> M["Seller notified"]
+    L --> M
+    M --> N["Seller ships item to<br/>buyer's shipping address"]
+```
+
+### 7.5 Second-Chance Offer (Runner-Up Buyers)
+
+```mermaid
+flowchart TD
+    A["Receive email:<br/>Second Chance offer"] --> B["Log in to ReelBid"]
+    B --> C["Navigate to Auction"]
+    C --> D["View winning amount"]
+    D --> E["Select offer adjustment<br/>(−5% to +5% of winning bid)"]
+    E --> F["Submit Second-Chance Offer"]
+    F --> G["Seller reviews offers"]
+    G --> H{"Seller Decision"}
+    H -->|Accepted| I["Item sold to runner-up"]
+    H -->|Rejected| J["Offer declined"]
+```
+
+---
+
+## 8. Role-Based Workflow — Seller
+
+### 8.1 Seller Onboarding
+
+```mermaid
+flowchart LR
+    A["User registers<br/>as Buyer"] --> B["Contacts Admin<br/>with authenticity proof"]
+    B --> C["Admin reviews request"]
+    C --> D{"Admin Decision"}
+    D -->|Approved| E["Role changed to Seller"]
+    D -->|Rejected| F["Remains as Buyer"]
+    E --> G["Access Seller Dashboard"]
+```
+
+> [!IMPORTANT]
+> Sellers cannot self-register. The role must be manually assigned by an Admin after verification of the seller's identity and authenticity of their memorabilia.
+
+### 8.2 Auction Creation Workflow
+
+```mermaid
+flowchart TD
+    A["Seller Dashboard"] --> B["Click 'Create Auction'"]
+    B --> C["Fill Auction Form"]
+    C --> D["Title, Description, Category"]
+    D --> E["Upload Images (base64)"]
+    E --> F["Set Starting Price"]
+    F --> G["Set Security Deposit %<br/>(1% - 50%)"]
+    G --> H["Set Start Date & End Date"]
+    H --> I["Profanity check on fields"]
+    I --> J{"Validation Pass?"}
+    J -->|Yes| K["Create Item (Status: Active)"]
+    J -->|No| L["❌ Remove offensive content"]
+    K --> M["Auction goes live on platform"]
+```
+
+### 8.3 Auction Management
+
+| Action | Description | Condition |
+|---|---|---|
+| **View All Auctions** | See all listed auctions with status, bids, current price | Always available |
+| **Edit Auction** | Update title, description, images, category, dates, price, security % | Only before auction ends |
+| **Close Auction Early** | Manually end an active auction | Seller or Admin only |
+| **View Top 5 Bidders** | See ranked bidders with details after completion | Completed auctions |
+| **Send Payment Reminder** | Email the winner to complete payment | Winner hasn't paid |
+| **Mark as Paid (Cash)** | Manually update payment status for offline payment | Winner paying in cash |
+| **Activate Second-Chance** | Email top 4 runner-ups if winner defaults | Winner hasn't paid |
+| **Accept/Reject Offers** | Review second-chance offers from runner-ups | Second-chance is open |
+| **Date Filtering** | Filter auctions by date range (from/to) | Always available |
+
+### 8.4 Post-Auction Detail View
+
+When an auction completes, the seller sees:
+- **Winner information**: Name, email, phone, full shipping address
+- **Top 5 bidders**: Ranked list with bid amounts, deposit amounts, bid counts
+- **Payment status**: Pending / Paid
+- **Remaining amount**: Winner's winning bid minus their locked security deposit
+- **Action buttons**: Send Reminder, Mark as Paid, Activate Second-Chance
+
+### 8.5 Second-Chance Offer Flow (Seller Side)
+
+```mermaid
+flowchart TD
+    A["Winner fails to pay"] --> B["Seller clicks<br/>'Activate Second Chance'"]
+    B --> C["System emails top 4<br/>runner-up bidders"]
+    C --> D["Each runner-up can submit<br/>offer (±5% of winning bid)"]
+    D --> E["Offers appear on<br/>seller's auction detail page"]
+    E --> F{"Seller reviews offers"}
+    F -->|Accept| G["Item awarded to<br/>selected runner-up"]
+    F -->|Reject| H["Offer declined"]
+```
+
+---
+
+## 9. Role-Based Workflow — Admin
+
+### 9.1 Admin Dashboard Overview
+
+The admin dashboard provides a comprehensive control panel with the following sections:
+
+| Section | Capabilities |
+|---|---|
+| **📊 Statistics Overview** | Total users, items, bids, transactions, active/completed auctions, revenue, locked deposits |
+| **👥 User Management** | View all users, change roles (Buyer↔Seller↔Admin), delete users, search users |
+| **📦 Auction Management** | View all auctions, force-close auctions |
+| **🏷️ Tier Management** | Create, edit, delete tier configurations (name, min balance, bid limit — classification only, not enforced) |
+| **💳 Withdrawal Requests** | Review pending withdrawal requests, approve or reject with notes |
+| **💰 Wallet Flow** | View aggregated wallet statistics by transaction type |
+
+### 9.2 User Management Workflow
+
+```mermaid
+flowchart TD
+    A["Admin Dashboard"] --> B["User Management Tab"]
+    B --> C["View All Users<br/>(Name, Email, Role, Balance, Tier)"]
+    C --> D{"Action?"}
+    D -->|Change Role| E["Select new role<br/>(Admin/Seller/Buyer)"]
+    E --> F["API: PUT /api/admin/users"]
+    F --> G["Role updated ✅"]
+    D -->|Delete User| H["Confirm deletion"]
+    H --> I["API: DELETE /api/admin/users"]
+    I --> J["User removed ✅"]
+    D -->|Search| K["Filter by name/email"]
+```
+
+> [!CAUTION]
+> Admins cannot delete their own account (self-deletion prevention is enforced server-side).
+
+### 9.3 Tier Management Workflow
+
+```mermaid
+flowchart TD
+    A["Tier Management Tab"] --> B{"Action?"}
+    B -->|Create Tier| C["Enter: Name, Min Balance,<br/>Bid Limit, Sort Order"]
+    C --> D["API: POST /api/admin/tiers"]
+    D --> E["Tier created ✅"]
+    B -->|Delete Tier| F["Select existing tier"]
+    F --> G["API: DELETE /api/admin/tiers"]
+    G --> H["Tier removed ✅"]
+```
+
+### 9.4 Withdrawal Approval Workflow
+
+```mermaid
+flowchart TD
+    A["Pending Withdrawals Tab"] --> B["View withdrawal requests<br/>(User, Amount, Bank Details, Date)"]
+    B --> C{"Decision?"}
+    C -->|Approve| D["API: PUT /api/admin/withdrawals/[id]<br/>status: 'approved'"]
+    D --> E["Request marked approved ✅"]
+    C -->|Reject| F["Enter admin notes<br/>(reason for rejection)"]
+    F --> G["API: PUT /api/admin/withdrawals/[id]<br/>status: 'rejected'"]
+    G --> H["Amount refunded to user's wallet"]
+    H --> I["HMAC hash re-signed"]
+    I --> J["WalletTransaction: credit recorded"]
+```
+
+### 9.5 Auction Force-Close Workflow
+
+```mermaid
+flowchart TD
+    A["Auction Management Tab"] --> B["Select Active Auction"]
+    B --> C["Click 'Close Auction'"]
+    C --> D["API: POST /api/auctions/complete"]
+    D --> E["Highest bidder declared winner"]
+    E --> F["Winner's deposit adjusted<br/>into payment"]
+    F --> G["All losing bidders'<br/>deposits refunded"]
+    G --> H["Auction status: Completed ✅"]
+```
+
+---
+
+## 10. Detailed Feature Workflows
+
+### 10.1 Complete Auction Lifecycle
+
+```mermaid
+flowchart TD
+    subgraph Creation["1️⃣ Creation Phase"]
+        S1["Seller creates auction"]
+        S2["Sets title, description,<br/>images, prices, dates"]
+        S3["Status: Active"]
+        S1 --> S2 --> S3
+    end
+    
+    subgraph Bidding["2️⃣ Bidding Phase"]
+        B1["Buyers browse & place bids"]
+        B2["Security deposits locked"]
+        B3["Real-time WebSocket updates"]
+        B4["Sniper protection triggers<br/>if bid in last 10 min"]
+        B1 --> B2 --> B3 --> B4
+    end
+    
+    subgraph Completion["3️⃣ Completion Phase"]
+        C1["Auction end date reached<br/>OR Seller/Admin force-close"]
+        C2["Highest bidder = Winner"]
+        C3["Winner's deposit → Payment"]
+        C4["Losers' deposits → Refunded"]
+        C5["Status: Completed"]
+        C1 --> C2 --> C3 --> C4 --> C5
+    end
+    
+    subgraph Payment["4️⃣ Payment Phase"]
+        P1["Winner views remaining amount"]
+        P2["Enters shipping address"]
+        P3["Pays via Razorpay OR<br/>Seller marks cash payment"]
+        P4["Payment verified & confirmed"]
+        P1 --> P2 --> P3 --> P4
+    end
+    
+    subgraph Delivery["5️⃣ Delivery Phase"]
+        D1["Seller sees winner's<br/>address & phone"]
+        D2["Seller ships item"]
+        D3["Transaction complete ✅"]
+        D1 --> D2 --> D3
+    end
+    
+    subgraph SecondChance["6️⃣ Second-Chance (if winner defaults)"]
+        SC1["Seller activates<br/>second-chance"]
+        SC2["Top 4 runner-ups notified"]
+        SC3["Runner-ups submit offers<br/>(±5% of winning bid)"]
+        SC4["Seller accepts best offer"]
+        SC1 --> SC2 --> SC3 --> SC4
+    end
+    
+    Creation --> Bidding --> Completion --> Payment --> Delivery
+    Payment -.->|Winner defaults| SecondChance
+```
+
+### 10.2 Authentication Flow
+
+```mermaid
+flowchart TD
+    A["User visits ReelBid"] --> B{"Has Account?"}
+    B -->|No| C["Register Page"]
+    C --> D{"Method?"}
+    D -->|Google| E["Google OAuth → NextAuth Callback"]
+    D -->|Email + OTP| F["Enter Email → Send OTP → Verify OTP"]
+    D -->|Email + Password| G["Enter Name, Email, Password"]
+    E --> H["Account created (Role: Buyer)"]
+    F --> H
+    G --> H
+    
+    B -->|Yes| I["Sign In Page"]
+    I --> J{"Method?"}
+    J -->|Google| K["Google OAuth"]
+    J -->|Email + OTP| L["Enter Email → Send OTP → Verify"]
+    J -->|Email + Password| M["Enter Credentials"]
+    K --> N["JWT Session Created"]
+    L --> N
+    M --> N
+    
+    H --> O{"Role?"}
+    N --> O
+    O -->|Buyer| P["Profile completion check"]
+    O -->|Seller| Q["Seller Dashboard"]
+    O -->|Admin| R["Admin Dashboard"]
+    P -->|Not completed| S["Redirect to profile completion"]
+    P -->|Completed| T["Buyer Dashboard"]
+```
+
+### 10.3 Wallet Integrity Verification Flow
+
+```mermaid
+flowchart TD
+    A["Any wallet mutation requested"] --> B["Load user from DB"]
+    B --> C["assertWalletIntegrity(user)"]
+    C --> D{"walletHash exists?"}
+    D -->|No (Legacy user)| E["Allow — will sign on mutation"]
+    D -->|Yes| F["Recompute HMAC:<br/>HMAC-SHA256(userId|balance|locked)"]
+    F --> G{"Computed hash =<br/>Stored hash?"}
+    G -->|Yes ✅| H["Integrity verified"]
+    G -->|No ❌| I["🚨 SECURITY ALERT<br/>Balance may be tampered"]
+    I --> J["Operation blocked<br/>Contact support"]
+    H --> K["Perform wallet mutation"]
+    K --> L["resignWallet(user)<br/>Compute new HMAC"]
+    L --> M["Save user with new hash"]
+    E --> K
+```
+
+### 10.4 Profanity Filtering Flow
+
+```mermaid
+flowchart TD
+    A["User submits content<br/>(title, description, address)"] --> B["Server receives input"]
+    B --> C["containsProfanity(text)"]
+    C --> D["Generate 4 normalized versions:"]
+    D --> D1["v1: Remove separators"]
+    D --> D2["v2: Strip non-alphanumeric"]
+    D --> D3["v3: De-obfuscate l33tspeak"]
+    D --> D4["v4: Decode special chars"]
+    D1 --> E["Check against 100+ banned words<br/>(English + Hindi)"]
+    D2 --> E
+    D3 --> E
+    D4 --> E
+    E --> F{"Match found?"}
+    F -->|Yes| G["❌ Reject with error:<br/>'Contains inappropriate language'"]
+    F -->|No| H["✅ Content accepted"]
+```
+
+---
+
+## 11. Security & Integrity Mechanisms
+
+### 11.1 Wallet Security (HMAC-SHA256)
+
+| Mechanism | Details |
+|---|---|
+| **Algorithm** | HMAC-SHA256 |
+| **Secret** | `NEXTAUTH_SECRET` (never exposed to client) |
+| **Payload Format** | `userId|walletBalance|lockedBalance` |
+| **Verification** | `crypto.timingSafeEqual()` to prevent timing attacks |
+| **When Verified** | Before EVERY wallet mutation (top-up, withdrawal, bid deposit, refund) |
+| **When Re-signed** | After EVERY wallet mutation, before `user.save()` |
+
+### 11.2 Server-Side Validation
+
+| Check | Details |
+|---|---|
+| **Amount Validation** | All amounts validated server-side: `typeof === 'number'`, `Number.isFinite()`, range checks |
+| **Max Top-up Cap** | Single top-up capped at ₹5,00,000 |
+| **Min Withdrawal** | Minimum withdrawal amount: ₹100 |
+| **IFSC Validation** | Regex: `^[A-Z]{4}0[A-Z0-9]{6}$` |
+| **Account Number** | Regex: `^\d{9,18}$` |
+| **Balance from DB** | All balance checks use database values, NEVER client-provided values |
+| **Self-Bidding Prevention** | Sellers cannot bid on their own auctions |
+| **Self-Deletion Prevention** | Admins cannot delete their own account |
+
+### 11.3 Anti-Sniper Protection
+
+| Feature | Implementation |
+|---|---|
+| **Trigger Condition** | Bid placed with ≤ 10 minutes remaining |
+| **Action** | Auction end date extended by 1 hour |
+| **Notification** | Email sent to top 10 bidders about the extension |
+| **Purpose** | Prevents last-second sniping and ensures fair competition |
+
+### 11.4 Content Safety
+
+| Feature | Implementation |
+|---|---|
+| **Profanity Filter** | 100+ banned words (English + Hindi) |
+| **L33tspeak Detection** | Character substitution map (@ → a, ! → i, $ → s, etc.) |
+| **Multi-version Check** | 4 normalized text versions checked against word list |
+| **Wildcard Patterns** | Catches `f**k`, `s**t`, `b**ch` type obfuscations |
+| **Applied To** | Auction titles, descriptions, shipping addresses |
+
+### 11.5 Authentication Security
+
+| Feature | Implementation |
+|---|---|
+| **Session Strategy** | JWT (stateless) |
+| **OAuth Provider** | Google (verified accounts only) |
+| **OTP Authentication** | Email-based one-time password |
+| **Session Update** | JWT refresh on profile/role changes |
+| **Route Protection** | Server-side session validation on all API routes |
+
+---
+
+## 12. API Endpoints Reference
+
+### 12.1 Authentication APIs
+
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/register` | Register new buyer account | Public |
+| `*` | `/api/auth/[...nextauth]` | NextAuth.js authentication handler | Public |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/otp/send` | Send OTP for registration | Public |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/otp/verify` | Verify registration OTP | Public |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/otp/signin-send` | Send OTP for sign-in | Public |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/otp/signin-verify` | Verify sign-in OTP | Public |
+
+### 12.2 Profile APIs
+
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/profile` | Get user profile | Authenticated |
+| `GET/POST` | `/api/profile/complete` | Check/complete profile | Buyer |
+| [PUT](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/admin/withdrawals/%5Bid%5D/route.ts#10-75) | `/api/profile/password` | Update password | Authenticated |
+| [PUT](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/admin/withdrawals/%5Bid%5D/route.ts#10-75) | `/api/profile/update-name` | Update display name | Authenticated |
+
+### 12.3 Auction & Item APIs
+
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/items` | List all auction items | Public |
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/auctions/[id]/second-chance` | Get second-chance details | Authenticated |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/auctions/[id]/second-chance` | Submit second-chance offer | Buyer (runner-up) |
+| `GET/POST` | `/api/auctions/complete` | Complete auction / Get summary | Authenticated |
+
+### 12.4 Bidding APIs
+
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/bids?itemId=X` | Get top bids for an item | Public |
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/bids?userId=X` | Get user's bid history | Public |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/bids` | Place a new bid | Buyer |
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/buyer/bids` | Get buyer's active bids | Buyer |
+
+### 12.5 Wallet APIs
+
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/wallet` | Get wallet info + transactions | Authenticated |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/wallet` | Top-up wallet | Authenticated |
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/wallet/transactions` | Get transaction history | Authenticated |
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/wallet/withdraw` | Get withdrawal requests | Authenticated |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/wallet/withdraw` | Submit withdrawal request | Authenticated |
+
+### 12.6 Payment APIs
+
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/payment` | Create Razorpay payment order | Winner |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/payment/verify` | Verify Razorpay payment | Winner |
+
+### 12.7 Seller APIs
+
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| `GET/POST/PUT` | `/api/seller/items` | Manage seller's items | Seller |
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/seller/auction/[id]` | Get auction detail with top bidders | Seller |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/seller/auction/[id]/notify` | Send payment reminder to winner | Seller |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/seller/auction/[id]/offer` | Activate second-chance offers | Seller |
+| [POST](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/auctions/complete/route.ts#11-170) | `/api/seller/auction/[id]/payment` | Mark winner's payment as completed | Seller |
+
+### 12.8 Admin APIs
+
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/admin/stats` | Get platform statistics | Admin |
+| [PUT](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/admin/withdrawals/%5Bid%5D/route.ts#10-75) | `/api/admin/users` | Change user role | Admin |
+| [DELETE](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/admin/users/route.ts#34-65) | `/api/admin/users?userId=X` | Delete a user | Admin |
+| `GET/POST/DELETE` | `/api/admin/tiers` | Manage tier configurations | Admin |
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/admin/withdrawals` | List all withdrawal requests | Admin |
+| [PUT](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/admin/withdrawals/%5Bid%5D/route.ts#10-75) | `/api/admin/withdrawals/[id]` | Approve/reject withdrawal | Admin |
+
+### 12.9 Other APIs
+
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/leaderboard` | Get global leaderboard data | Public |
+| [GET](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/api/seller/auction/%5Bid%5D/route.ts#9-121) | `/api/tiers` | Get all tier configurations | Public |
+
+---
+
+## 13. Pages & Navigation Structure
+
+### 13.1 Sitemap
+
+```mermaid
+graph TD
+    HOME["/ (Home Page)"]
+    AUTH_SIGNIN["/auth/signin"]
+    AUTH_REGISTER["/auth/register"]
+    AUCTIONS["/auctions"]
+    AUCTION_DETAIL["/auctions/[id]"]
+    DASHBOARD["/dashboard"]
+    PROFILE["/profile"]
+    PROFILE_COMPLETE["/profile/complete"]
+    LEADERBOARD["/leaderboard"]
+    WORKING_PROCESS["/working-process"]
+    SETTINGS["/settings/profile"]
+    
+    HOME --> AUTH_SIGNIN
+    HOME --> AUTH_REGISTER
+    HOME --> AUCTIONS
+    HOME --> LEADERBOARD
+    HOME --> WORKING_PROCESS
+    AUCTIONS --> AUCTION_DETAIL
+    AUTH_SIGNIN --> DASHBOARD
+    AUTH_REGISTER --> PROFILE_COMPLETE
+    PROFILE_COMPLETE --> DASHBOARD
+    DASHBOARD --> PROFILE
+    DASHBOARD --> SETTINGS
+```
+
+### 13.2 Page Descriptions
+
+| Page | Route | Description |
+|---|---|---|
+| **Home** | `/` | Landing page with hero section, featured auctions, process steps, statistics |
+| **Sign In** | `/auth/signin` | Login with Google OAuth, Email+OTP, or Email+Password |
+| **Register** | `/auth/register` | New user registration |
+| **Auctions** | `/auctions` | Browse all active auctions with search and filtering |
+| **Auction Detail** | `/auctions/[id]` | Individual auction with bidding interface, real-time updates, second-chance |
+| **Dashboard** | `/dashboard` | Role-based dashboard (Buyer / Seller / Admin) |
+| **Profile Completion** | `/profile/complete` | Mandatory for Buyers: enter shipping address and phone |
+| **Leaderboard** | `/leaderboard` | Global rankings: Top Collectors, Highest Pledges, Most Active |
+| **Working Process** | `/working-process` | Role-by-role guide to how ReelBid works |
+| **Settings** | `/settings/profile` | Profile settings and management |
+
+### 13.3 Dashboard Views
+
+The `/dashboard` route renders different views based on the user's role:
+
+| Role | Dashboard Component | Key Features |
+|---|---|---|
+| **Buyer** | [BuyerDashboard.tsx](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/dashboard/BuyerDashboard.tsx) | Wallet overview, top-up, withdraw, active bids, won auctions, quick bid, bid history, date filtering |
+| **Seller** | [SellerDashboard.tsx](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/dashboard/SellerDashboard.tsx) | Stats cards, auction list, create/edit auction form, close auction, auction detail view, date filtering |
+| **Admin** | [AdminDashboard.tsx](file:///c:/Users/lokes/OneDrive/Desktop/ReelBid/src/app/dashboard/AdminDashboard.tsx) | Platform stats, user management, auction management, tier management, withdrawal approvals, wallet flow |
+
+---
+
+## 14. Real-Time Communication
+
+### 14.1 WebSocket Architecture
+
+| Component | Technology | Purpose |
+|---|---|---|
+| **Server** | Socket.IO (on custom HTTP server) | Broadcast auction events |
+| **Client** | socket.io-client | Receive real-time updates |
+| **Rooms** | Per-auction rooms (`itemId`) | Scope updates to auction viewers |
+
+### 14.2 Events
+
+| Event | Direction | Data | Trigger |
+|---|---|---|---|
+| `joinRoom` | Client → Server | `itemId` | User opens auction detail page |
+| `leaveRoom` | Client → Server | `itemId` | User leaves auction page |
+| `bidUpdated` | Server → Clients | `{ itemId, newPrice, endDate, highestBidderId, bidCount }` | New bid placed |
+| `auctionCompleted` | Server → Clients | `{ itemId, winnerId, finalPrice }` | Auction marked complete |
+
+---
+
+## 15. Email Notification System
+
+### 15.1 Email Templates
+
+| Email | Trigger | Recipients | Content |
+|---|---|---|---|
+| **Auction Extended** | Sniper protection activated | Top 10 bidders | Notification that auction was extended by 1 hour |
+| **Payment Reminder** | Seller sends reminder | Auction winner | Congratulations + payment link + final amount |
+| **Second-Chance Offer** | Seller activates second-chance | Top 4 runner-up bidders | Item available, price range (±5%), submit offer link |
+
+### 15.2 Email Infrastructure
+
+| Setting | Details |
+|---|---|
+| **Transport** | SMTP (via Nodemailer) |
+| **From Address** | `noreply@reelbid.com` (configurable) |
+| **Template Style** | HTML emails with dark theme, gradient headers, branded design |
+| **Configuration** | `EMAIL_SERVER_HOST`, `EMAIL_SERVER_PORT`, `EMAIL_SERVER_USER`, `EMAIL_SERVER_PASSWORD` |
+
+---
+
+## 16. Payment Integration
+
+### 16.1 Razorpay Integration
+
+| Feature | Details |
+|---|---|
+| **Gateway** | Razorpay (Indian payments) |
+| **Currency** | INR (₹) |
+| **Flow** | Create Order → Client-side checkout → Server-side verification |
+| **Signature Verification** | HMAC-SHA256 using `RAZORPAY_KEY_SECRET` |
+| **Receipt Format** | `rb_{auctionId_last8}_{timestamp_base36}` |
+
+### 16.2 Payment Calculation
+
+```
+Winning Amount = Item.finalAmount || Item.currentPrice
+Locked Deposit = Sum of all user's bids' lockedDeposit on this auction
+Remaining Amount = max(0, Winning Amount − Locked Deposit)
+```
+
+### 16.3 Payment Methods
+
+| Method | Flow |
+|---|---|
+| **Online (Razorpay)** | Winner pays remaining amount via Razorpay → Signature verified → Status: paid |
+| **Cash** | Winner pays seller in cash → Seller clicks "Mark as Paid" → Status: paid |
+| **Bank Transfer** | (Supported in schema, manual process) |
+
+---
+
+## 17. Appendix: Workflow Diagrams
+
+### 17.1 Complete Money Flow
+
+```mermaid
+flowchart LR
+    subgraph BuyerWallet["Buyer's Wallet"]
+        TOP_UP["Top-Up (Credit)"]
+        BALANCE["Available Balance"]
+        LOCKED["Locked Balance<br/>(Security Deposits)"]
+        WITHDRAW["Withdrawal"]
+    end
+    
+    subgraph AuctionFlow["Auction Operations"]
+        BID["Place Bid"]
+        WIN["Win Auction"]
+        LOSE["Lose Auction"]
+        PAY["Make Payment"]
+    end
+    
+    TOP_UP -->|+"₹"| BALANCE
+    BALANCE -->|"Lock deposit"| LOCKED
+    BID -.->|"Triggers lock"| LOCKED
+    
+    WIN -->|"Deposit → Payment"| PAY
+    LOSE -->|"Unlock & Refund"| BALANCE
+    
+    BALANCE -->|"Deduct"| WITHDRAW
+    WITHDRAW -->|"Admin: Approve"| PAID["Bank Transfer"]
+    WITHDRAW -->|"Admin: Reject"| BALANCE
+```
+
+### 17.2 Role Interaction Map
+
+```mermaid
+graph TB
+    subgraph Buyers["🛒 Buyers"]
+        B1["Browse Auctions"]
+        B2["Place Bids"]
+        B3["Win & Pay"]
+    end
+    
+    subgraph Sellers["🏪 Sellers"]
+        S1["Create Auctions"]
+        S2["Monitor Bids"]
+        S3["Ship Items"]
+    end
+    
+    subgraph Admins["🛡️ Admins"]
+        A1["Manage Users & Roles"]
+        A2["Manage Tiers"]
+        A3["Approve Withdrawals"]
+    end
+    
+    B2 -->|"Bid on"| S1
+    B3 -->|"Pay & receive"| S3
+    A1 -->|"Promote to Seller"| S1
+    A2 -->|"Define bid limits"| B2
+    A3 -->|"Process withdrawals"| B1
+    S2 -->|"View bid activity"| B2
+```
+
+---
+
+<div align="center">
+
+## ✅ Approval Section
+
+| Item | Status |
+|---|---|
+| **Document Reviewed By** | _________________________ |
+| **Date** | _________________________ |
+| **Client Approval** | ☐ Approved &nbsp;&nbsp;&nbsp; ☐ Approved with Changes &nbsp;&nbsp;&nbsp; ☐ Rejected |
+| **Comments / Change Requests** | |
+| | |
+| | |
+| **Client Signature** | _________________________ |
+| **Date** | _________________________ |
+
+---
+
+*This document is generated based on the actual codebase of the ReelBid application. All features, workflows, and technical specifications described herein are implemented and functional.*
+
+**ReelBid — Premium Movie Memorabilia Auctions**  
+*Document Version 1.0 — 4 March 2026*
+
+</div>

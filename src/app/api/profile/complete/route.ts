@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import User from '@/models/User';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { validateFields } from '@/lib/profanityFilter';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,12 @@ export async function POST(req: Request) {
         // Validate required fields
         if (!name || !phone || !address || !city || !state || !pincode) {
             return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
+        }
+
+        // Check for profanity in text fields
+        const profanityError = validateFields({ Name: name, Address: address, City: city, State: state });
+        if (profanityError) {
+            return NextResponse.json({ error: profanityError }, { status: 400 });
         }
 
         // Basic phone validation (Indian 10-digit)

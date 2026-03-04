@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import User from '@/models/User';
+import { containsProfanity } from '@/lib/profanityFilter';
 
 export async function POST(req: Request) {
     try {
@@ -9,6 +10,12 @@ export async function POST(req: Request) {
         // For OTP method, password is not required
         if (!name || !email) {
             return NextResponse.json({ error: 'Name and email are required' }, { status: 400 });
+        }
+
+        // Check for profanity in name
+        const badWord = containsProfanity(name);
+        if (badWord) {
+            return NextResponse.json({ error: 'The name contains inappropriate language. Please choose a different name.' }, { status: 400 });
         }
 
         if (method === 'password' && !password) {

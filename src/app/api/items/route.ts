@@ -117,6 +117,17 @@ export async function PATCH(req: Request) {
             return NextResponse.json({ error: 'Cannot change price or deposit % after bids exist' }, { status: 400 });
         }
 
+        // Check for profanity in title & description if being updated
+        if (updates.title || updates.description) {
+            const profanityError = validateFields({
+                ...(updates.title ? { Title: updates.title } : {}),
+                ...(updates.description ? { Description: updates.description } : {}),
+            });
+            if (profanityError) {
+                return NextResponse.json({ error: profanityError }, { status: 400 });
+            }
+        }
+
         Object.assign(item, updates);
         await item.save();
 
