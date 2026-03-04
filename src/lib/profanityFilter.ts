@@ -340,23 +340,27 @@ const BANNED_WORDS: string[] = [
 ];
 
 /**
- * Character substitution map for l33tspeak / obfuscation detection
+ * Character substitution map for l33tspeak / homoglyph obfuscation detection
  */
 const CHAR_MAP: Record<string, string> = {
-    '@': 'a', '4': 'a',
-    '!': 'i', '1': 'i', '|': 'i',
-    '$': 's', '5': 's',
-    '0': 'o',
-    '3': 'e',
-    '7': 't',
-    '+': 't',
-    '8': 'b',
-    '9': 'g',
-    '6': 'g',
+    '@': 'a', '4': 'a', '∆': 'a', 'α': 'a', 'а': 'a', // including cyrillic/greek
+    '!': 'i', '1': 'i', '|': 'i', 'ι': 'i', 'і': 'i',
+    '$': 's', '5': 's', '§': 's',
+    '0': 'o', 'ο': 'o', 'о': 'o', 'θ': 'o', 'ø': 'o',
+    '3': 'e', 'ε': 'e', 'е': 'e',
+    '7': 't', '+': 't', 'τ': 't', 'т': 't',
+    '8': 'b', 'ß': 'b', 'в': 'b',
+    '9': 'g', '6': 'g',
+    'ν': 'v', 'υ': 'u', 'μ': 'u', 'µ': 'u',
+    'к': 'k', 'κ': 'k',
+    'р': 'p', 'ρ': 'p',
+    'с': 'c',
+    'х': 'x', 'χ': 'x',
+    'у': 'y',
 };
 
 /**
- * Normalize text by replacing l33tspeak characters with their letter equivalents
+ * Normalize text by replacing l33tspeak and homoglyph characters with their standard alphabet equivalents
  */
 function deobfuscate(text: string): string {
     return text
@@ -408,8 +412,17 @@ function stripSeparators(text: string): string {
 export function containsProfanity(text: string): string | null {
     if (!text) return null;
 
+    // 0. Base text normalization:
+    // - Remove zero-width spaces, non-joiners, byte-order marks (invisible chars)
+    // - Normalize Unicode to decomposed form (NFD)
+    // - Strip out combining diacritical marks (accents, tildes, etc.)
+    const baseCleanText = text
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+
     // Create multiple normalized versions to check
-    const lower = text.toLowerCase();
+    const lower = baseCleanText.toLowerCase();
 
     // Version 1: Original with separators removed
     const v1 = lower.replace(/[_\-\.]/g, '');
