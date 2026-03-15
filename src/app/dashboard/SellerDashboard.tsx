@@ -15,9 +15,6 @@ export default function SellerDashboard() {
     const { data: session } = useSession();
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [creating, setCreating] = useState(false);
-    const [showCreateForm, setShowCreateForm] = useState(false);
-    const [editingItemId, setEditingItemId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'all'>('active');
     const [searchText, setSearchText] = useState('');
     const [dateFrom, setDateFrom] = useState('');
@@ -28,14 +25,6 @@ export default function SellerDashboard() {
         setDateFrom('');
         setDateTo('');
     }, [activeTab]);
-
-    // Form state
-    const [form, setForm] = useState({
-        title: '', description: '', startingPrice: '',
-        securityPercentage: '5', category: 'General',
-        duration: '24', // hours
-    });
-    const [uploadedImages, setUploadedImages] = useState<string[]>([]);
 
     useEffect(() => { fetchData(); }, []);
 
@@ -48,91 +37,8 @@ export default function SellerDashboard() {
         setLoading(false);
     };
 
-    const handleOpenCreateForm = () => {
-        setForm({ title: '', description: '', startingPrice: '', securityPercentage: '5', category: 'General', duration: '24' });
-        setUploadedImages([]);
-        setEditingItemId(null);
-        setShowCreateForm(!showCreateForm);
-    };
 
-    const handleEditClick = (item: any) => {
-        setForm({
-            title: item.title,
-            description: item.description,
-            startingPrice: item.startingPrice?.toString() || '',
-            securityPercentage: item.securityPercentage?.toString() || '5',
-            category: item.category || 'General',
-            duration: '24' // Default for now
-        });
-        setUploadedImages(item.images || []);
-        setEditingItemId(item._id);
-        setShowCreateForm(true);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!form.title || !form.description || !form.startingPrice) {
-            return toast.error('Fill all required fields');
-        }
-        setCreating(true);
-        try {
-            const now = new Date();
-            const endDate = new Date(now.getTime() + parseInt(form.duration) * 60 * 60 * 1000);
-
-            const payload: any = {
-                title: form.title,
-                description: form.description,
-                startingPrice: parseFloat(form.startingPrice),
-                securityPercentage: parseFloat(form.securityPercentage),
-                category: form.category,
-                images: uploadedImages,
-            };
-
-            if (editingItemId) {
-                payload.itemId = editingItemId;
-                // Only send new dates if they explicitly want to change them, but for now we'll update it
-                payload.endDate = endDate.toISOString();
-            } else {
-                payload.startDate = now.toISOString();
-                payload.endDate = endDate.toISOString();
-            }
-
-            const res = await fetch('/api/items', {
-                method: editingItemId ? 'PATCH' : 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error);
-            toast.success(editingItemId ? 'Auction updated!' : 'Auction created!');
-            setForm({ title: '', description: '', startingPrice: '', securityPercentage: '5', category: 'General', duration: '24' });
-            setUploadedImages([]);
-            setEditingItemId(null);
-            setShowCreateForm(false);
-            fetchData();
-        } catch (err: any) {
-            toast.error(err.message);
-        }
-        setCreating(false);
-    };
-
-    const handleCloseAuction = async (itemId: string) => {
-        if (!confirm('Are you sure you want to close this auction? This will declare the winner and refund losing bidders.')) return;
-        try {
-            const res = await fetch('/api/auctions/complete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ itemId }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error);
-            toast.success(`Auction completed! ${data.winner ? 'Winner declared.' : 'No winner (no bids).'}`);
-            fetchData();
-        } catch (err: any) {
-            toast.error(err.message);
-        }
-    };
 
     if (loading) {
         return (
@@ -144,7 +50,11 @@ export default function SellerDashboard() {
 
     const activeItems = items.filter(i => i.status === 'Active' && new Date(i.endDate) > new Date());
     const completedItems = items.filter(i => i.status === 'Completed' || (i.status === 'Active' && new Date(i.endDate) <= new Date()));
-    const totalRevenue = completedItems.reduce((sum, i) => sum + (i.finalAmount || i.currentPrice || 0), 0);
+    const totalRevenue = completedItems.reduce((sum, i) => {
+        const shareObj = i.revenueShares?.find((r: any) => r.sellerId === (session?.user as any)?.id);
+        const percent = shareObj ? parseFloat(shareObj.percentage) || 100 : (i.seller?._id === (session?.user as any)?.id ? 100 : 0);
+        return sum + ((i.finalAmount || i.currentPrice || 0) * percent) / 100;
+    }, 0);
     const totalBids = items.reduce((sum, i) => sum + (i.bidCount || 0), 0);
 
     const filteredItems = (activeTab === 'active' ? activeItems : activeTab === 'completed' ? completedItems : items)
@@ -204,23 +114,6 @@ export default function SellerDashboard() {
 
                 <div style={{ height: '1px', background: 'var(--border-primary)', margin: '8px 0' }} />
 
-                <button
-                    onClick={handleOpenCreateForm}
-                    style={{
-                        display: 'flex', alignItems: 'center', gap: '10px',
-                        padding: '10px 14px', borderRadius: '12px',
-                        border: 'none', cursor: 'pointer',
-                        fontWeight: 700, fontSize: '0.85rem',
-                        background: showCreateForm ? 'var(--danger-soft)' : 'var(--accent-soft)',
-                        color: showCreateForm ? 'var(--danger)' : 'var(--accent-text)',
-                        transition: 'all 0.2s',
-                        textAlign: 'left' as const,
-                        width: '100%',
-                    }}>
-                    <PlusCircle size={18} />
-                    {showCreateForm ? 'Cancel' : 'New Auction'}
-                </button>
-
                 {/* Quick Stats in sidebar */}
                 <div style={{ marginTop: '16px', padding: '14px', borderRadius: '12px', background: 'var(--bg-card)', border: '1px solid var(--border-primary)' }}>
                     <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '10px', textTransform: 'uppercase' }}>Quick Stats</p>
@@ -239,145 +132,6 @@ export default function SellerDashboard() {
 
             {/* Main Content */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-                {/* Create Auction Form */}
-                {showCreateForm && (
-                    <div className="card animate-slide-up" style={{ padding: '28px' }}>
-                        <h3 style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <PlusCircle size={20} style={{ color: 'var(--accent)' }} />
-                            {editingItemId ? 'Edit Auction' : 'New Auction'}
-                        </h3>
-                        <form onSubmit={handleSubmit}>
-                            <div className="seller-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                <div>
-                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                                        Product Name *
-                                    </label>
-                                    <input className="input-field" value={form.title}
-                                        onChange={e => setForm({ ...form, title: e.target.value })}
-                                        placeholder="e.g. Hero's Leather Jacket from Pushpa 2" required />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                                        Category
-                                    </label>
-                                    <select className="input-field" value={form.category}
-                                        onChange={e => setForm({ ...form, category: e.target.value })}>
-                                        <option value="General">General</option>
-                                        <option value="Clothing">Clothing</option>
-                                        <option value="Vehicles">Vehicles</option>
-                                        <option value="Accessories">Accessories</option>
-                                        <option value="Props">Props</option>
-                                        <option value="Memorabilia">Memorabilia</option>
-                                    </select>
-                                </div>
-                                <div style={{ gridColumn: '1 / -1' }}>
-                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                                        Description *
-                                    </label>
-                                    <textarea className="input-field" value={form.description}
-                                        onChange={e => setForm({ ...form, description: e.target.value })}
-                                        placeholder="Describe the item in detail..."
-                                        rows={3} required style={{ resize: 'vertical' }} />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                                        <DollarSign size={14} /> Base Price (₹) *
-                                    </label>
-                                    <input type="number" className="input-field" value={form.startingPrice}
-                                        onChange={e => setForm({ ...form, startingPrice: e.target.value })}
-                                        placeholder="e.g. 5000" min="1" required />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                                        <Percent size={14} /> Security Deposit (%) *
-                                    </label>
-                                    <input type="number" className="input-field" value={form.securityPercentage}
-                                        onChange={e => setForm({ ...form, securityPercentage: e.target.value })}
-                                        placeholder="e.g. 5" min="1" max="50" required />
-                                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                        Base Deposit Amount: <strong style={{ color: 'var(--accent)' }}>₹{form.startingPrice ? Math.ceil(parseInt(form.startingPrice) * (parseInt(form.securityPercentage || '0') / 100)).toLocaleString() : '0'}</strong>
-                                    </p>
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                                        <Clock size={14} /> Duration (hours)
-                                    </label>
-                                    <select className="input-field" value={form.duration}
-                                        onChange={e => setForm({ ...form, duration: e.target.value })}>
-                                        <option value="1">1 Hour</option>
-                                        <option value="6">6 Hours</option>
-                                        <option value="12">12 Hours</option>
-                                        <option value="24">24 Hours</option>
-                                        <option value="48">2 Days</option>
-                                        <option value="72">3 Days</option>
-                                        <option value="168">7 Days</option>
-                                    </select>
-                                </div>
-                                <div style={{ gridColumn: '1 / -1' }}>
-                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                                        Upload Images (Max 3)
-                                    </label>
-                                    <input type="file" multiple accept="image/*" className="input-field"
-                                        onChange={(e) => {
-                                            const files = Array.from(e.target.files || []).slice(0, 3);
-                                            const newImages: string[] = [];
-                                            let count = 0;
-                                            files.forEach(file => {
-                                                const reader = new FileReader();
-                                                reader.onloadend = () => {
-                                                    newImages.push(reader.result as string);
-                                                    count++;
-                                                    if (count === files.length) {
-                                                        setUploadedImages(prev => [...prev, ...newImages].slice(0, 3));
-                                                    }
-                                                };
-                                                reader.readAsDataURL(file);
-                                            });
-                                        }} />
-                                    {uploadedImages.length > 0 && (
-                                        <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                                            {uploadedImages.map((img, idx) => (
-                                                <div key={idx} style={{ position: 'relative', width: '80px', height: '80px' }}>
-                                                    <img src={img} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px', background: '#000' }} />
-                                                    <button type="button" onClick={() => setUploadedImages(prev => prev.filter((_, i) => i !== idx))}
-                                                        style={{ position: 'absolute', top: -5, right: -5, background: 'var(--danger)', color: 'white', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer', fontSize: '10px' }}>
-                                                        ✕
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Preview */}
-                            {form.startingPrice && form.securityPercentage && (
-                                <div style={{
-                                    marginTop: '16px', padding: '14px', borderRadius: '12px',
-                                    background: 'var(--accent-soft)', display: 'flex', flexDirection: 'column', gap: '8px',
-                                }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-text)', fontSize: '0.82rem' }}>
-                                        <Shield size={14} />
-                                        <span><strong>Dynamic Deposit System Enabled:</strong></span>
-                                    </div>
-                                    <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                        <li>Initial Deposit (at Base Price): <strong>₹{Math.ceil(parseInt(form.startingPrice) * parseInt(form.securityPercentage) / 100).toLocaleString()}</strong></li>
-                                        <li>Deposit required doubles dynamically as the winning bid crosses 2x thresholds up to ₹80,000.</li>
-                                        <li>Above ₹80,000, it switches to a flat increase, adding <strong>{form.securityPercentage}%</strong> extra for every ₹10,000 stepped in the bid!</li>
-                                    </ul>
-                                </div>
-                            )}
-
-                            <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                                <button type="button" className="btn-secondary" onClick={() => setShowCreateForm(false)}>Cancel</button>
-                                <button type="submit" className="btn-primary" disabled={creating}>
-                                    {creating ? <Loader2 size={16} className="animate-spin" /> : editingItemId ? 'Update Auction' : 'Publish Auction'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                )}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                     <h2 style={{ fontWeight: 700, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -430,6 +184,9 @@ export default function SellerDashboard() {
                             const timeLeft = new Date(item.endDate).getTime() - Date.now();
                             const hoursLeft = Math.max(0, Math.floor(timeLeft / (1000 * 60 * 60)));
                             const minsLeft = Math.max(0, Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60)));
+                            const shareObj = item.revenueShares?.find((r: any) => r.sellerId === (session?.user as any)?.id);
+                            const sellerPercent = shareObj ? parseFloat(shareObj.percentage) || 100 : (item.seller?._id === (session?.user as any)?.id ? 100 : 0);
+                            const revAmount = ((item.finalAmount || item.currentPrice || 0) * sellerPercent) / 100;
 
                             return (
                                 <div key={item._id} className="card" style={{ padding: '20px' }}>
@@ -482,6 +239,20 @@ export default function SellerDashboard() {
                                                     </span>
                                                 )}
                                             </div>
+
+                                            {shareObj && (
+                                                <div style={{ marginTop: '10px', fontSize: '0.82rem' }}>
+                                                    <span style={{
+                                                        background: 'var(--accent-soft)', color: 'var(--accent-text)',
+                                                        padding: '4px 8px', borderRadius: '4px', fontWeight: 600,
+                                                        display: 'inline-flex', alignItems: 'center', gap: '4px'
+                                                    }}>
+                                                        <DollarSign size={14} /> My Share: {sellerPercent}% (₹{revAmount.toLocaleString()})
+                                                        <span style={{ fontSize: '0.75rem', fontWeight: 400, opacity: 0.8 }}> - {shareObj.professionalRole}</span>
+                                                    </span>
+                                                </div>
+                                            )}
+
                                             {item.winner && (
                                                 <div style={{
                                                     marginTop: '10px', padding: '8px 12px', borderRadius: '10px',
@@ -508,18 +279,7 @@ export default function SellerDashboard() {
                                                     </button>
                                                 </Link>
                                             )}
-                                            {isActive && item.bidCount === 0 && (
-                                                <button className="btn-secondary" onClick={() => handleEditClick(item)}
-                                                    style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
-                                                    Edit
-                                                </button>
-                                            )}
-                                            {(isActive || isEnded) && item.status !== 'Completed' && (
-                                                <button className="btn-primary" onClick={() => handleCloseAuction(item._id)}
-                                                    style={{ padding: '8px 14px', fontSize: '0.8rem', background: 'var(--success)' }}>
-                                                    <CheckCircle size={14} /> Close
-                                                </button>
-                                            )}
+
                                         </div>
                                     </div>
                                 </div>

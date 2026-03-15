@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
-import { Wallet, LogOut, Loader2, Sun, Moon, Menu, X, Gavel, Trophy, LayoutGrid, User, ChevronRight } from 'lucide-react';
+import { Wallet, LogOut, Loader2, Sun, Moon, Menu, X, Gavel, Trophy, LayoutGrid, User, ChevronRight, Archive } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 
 export default function Navbar() {
@@ -42,6 +42,7 @@ export default function Navbar() {
 
     const navLinks = [
         { href: '/auctions', label: 'Auctions', icon: <Gavel style={{ width: 16, height: 16 }} /> },
+        { href: '/closed-auctions', label: 'Closed Auctions', icon: <Archive style={{ width: 16, height: 16 }} /> },
         { href: '/leaderboard', label: 'Leaderboard', icon: <Trophy style={{ width: 16, height: 16 }} /> },
         { href: '/working-process', label: 'How It Works', icon: <LayoutGrid style={{ width: 16, height: 16 }} /> },
     ];

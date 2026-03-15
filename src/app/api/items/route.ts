@@ -23,9 +23,12 @@ export async function GET(req: Request) {
             return NextResponse.json(item);
         }
 
+        const session = await getServerSession(authOptions);
         const filter: any = {};
         if (sellerId) {
-            filter.seller = sellerId;
+            filter['revenueShares.sellerId'] = sellerId;
+        } else if ((session?.user as any)?.role === 'Admin') {
+            filter.status = { $in: ['Pending', 'Active', 'Completed', 'Cancelled'] };
         } else {
             filter.status = { $in: ['Active', 'Completed'] };
         }
@@ -35,8 +38,9 @@ export async function GET(req: Request) {
         }
 
         const items = await Item.find(filter)
-            .sort({ endDate: 1 })
+            .sort({ endDate: -1 })
             .populate('highestBidder', 'name image')
+            .populate('winner', 'name image')
             .populate('seller', 'name image');
 
         return NextResponse.json(items);
@@ -52,8 +56,8 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // Only Admin or Seller can create items
-        if ((session.user as any).role !== 'Admin' && (session.user as any).role !== 'Seller') {
+        // Only Admin can create items now
+        if ((session.user as any).role !== 'Admin') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
@@ -74,6 +78,7 @@ export async function POST(req: Request) {
 
         const item = await Item.create({
             title: body.title,
+            movieName: body.movieName || '',
             description: body.description,
             images: body.images || [],
             category: body.category || 'General',
@@ -81,8 +86,11 @@ export async function POST(req: Request) {
             securityPercentage: secPct,
             startDate: body.startDate,
             endDate: body.endDate,
+            platformFeeType: body.platformFeeType || 'percentage',
+            platformFeeValue: body.platformFeeValue || 0,
+            revenueShares: body.revenueShares || [], // Admin specifies sellers & percentages
             seller: (session.user as any).id,
-            status: 'Active',
+            status: 'Active', // Admin creating it directly makes it Active
         });
 
         return NextResponse.json(item);
@@ -132,6 +140,42 @@ export async function PATCH(req: Request) {
         await item.save();
 
         return NextResponse.json(item);
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
+export async function DELETE(req: Request) {
+    try {
+        const session = await getServerSession(authOptions);
+        if (!session || !session.user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const { searchParams } = new URL(req.url);
+        const itemId = searchParams.get('itemId');
+
+        if (!itemId) return NextResponse.json({ error: 'itemId is required' }, { status: 400 });
+
+        await connectDB();
+        const item = await Item.findById(itemId);
+        if (!item) return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+
+        const userRole = (session.user as any).role;
+        const userId = (session.user as any).id;
+
+        // Only Admin or the Seller who created it can delete
+        if (userRole !== 'Admin' && item.seller.toString() !== userId) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+
+        // Prevent deleting active auction with bids
+        if (item.status === 'Active' && item.bidCount > 0) {
+            return NextResponse.json({ error: 'Cannot delete active auction with existing bids' }, { status: 400 });
+        }
+
+        await Item.findByIdAndDelete(itemId);
+        return NextResponse.json({ success: true, message: 'Auction deleted successfully' });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

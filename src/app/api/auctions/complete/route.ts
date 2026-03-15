@@ -139,6 +139,90 @@ export async function POST(req: Request) {
             }
         }
 
+        // ====================================================================
+        // REVENUE DISTRIBUTION: Deduct Platform Fee & Distribute among Sellers
+        // ====================================================================
+        if (winnerId) {
+            const totalAmount = item.currentPrice;
+            let platformFee = 0;
+            if (item.platformFeeType === 'percentage') {
+                platformFee = totalAmount * (item.platformFeeValue / 100);
+            } else {
+                platformFee = item.platformFeeValue || 0;
+            }
+
+            const distributableAmount = Math.max(0, totalAmount - platformFee);
+
+            // 1. Credit Platform Fee to Admin (First Admin found)
+            if (platformFee > 0) {
+                const adminUser = await User.findOne({ role: 'Admin' });
+                if (adminUser) {
+                    adminUser.walletBalance += platformFee;
+                    resignWallet(adminUser);
+                    await adminUser.save();
+
+                    await WalletTransaction.create({
+                        user: adminUser._id,
+                        type: 'platform_fee',
+                        amount: platformFee,
+                        description: `Platform fee received for auction "${item.title}"`,
+                        auction: item._id,
+                        balanceAfter: adminUser.walletBalance,
+                        lockedAfter: adminUser.lockedBalance || 0,
+                    });
+                }
+            }
+
+            // 2. Distribute among sellers in revenueShares
+            if (item.revenueShares && item.revenueShares.length > 0) {
+                for (const share of item.revenueShares) {
+                    const seller = await User.findById(share.sellerId);
+                    if (seller) {
+                        try {
+                            assertWalletIntegrity(seller);
+                            const sellerShareAmount = distributableAmount * (share.percentage / 100);
+                            seller.walletBalance += sellerShareAmount;
+                            resignWallet(seller);
+                            await seller.save();
+
+                            await WalletTransaction.create({
+                                user: seller._id,
+                                type: 'payment',
+                                amount: sellerShareAmount,
+                                description: `Revenue share (${share.percentage}%) for auction "${item.title}" (${share.professionalRole || 'Seller'})`,
+                                auction: item._id,
+                                balanceAfter: seller.walletBalance,
+                                lockedAfter: seller.lockedBalance || 0,
+                            });
+                        } catch (e) {
+                            console.error(`Failed to credit seller ${share.sellerId}:`, e);
+                        }
+                    }
+                }
+            } else {
+                // Fallback: If no revenueShares, credit all to the auction creator (admin)
+                const creator = await User.findById(item.seller);
+                if (creator) {
+                    try {
+                        assertWalletIntegrity(creator);
+                        creator.walletBalance += distributableAmount;
+                        resignWallet(creator);
+                        await creator.save();
+
+                        await WalletTransaction.create({
+                            user: creator._id,
+                            type: 'payment',
+                            amount: distributableAmount,
+                            description: `Auction revenue for "${item.title}" (no split defined)`,
+                            auction: item._id,
+                            balanceAfter: creator.walletBalance,
+                            lockedAfter: creator.lockedBalance || 0,
+                        });
+                    } catch (e) { console.error('Failed to credit creator:', e); }
+                }
+            }
+        }
+
         // Update item status
         item.status = 'Completed';
         item.winner = winnerId ? winnerId : undefined;

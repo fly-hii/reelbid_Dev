@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const ItemSchema = new mongoose.Schema(
     {
         title: { type: String, required: true },
+        movieName: { type: String },
         description: { type: String, required: true },
         images: [{ type: String }],
         category: { type: String, default: 'General' },
@@ -16,14 +17,21 @@ const ItemSchema = new mongoose.Schema(
         highestBidder: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         winner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         finalAmount: { type: Number }, // final payment amount after auction ends
-        seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Creator (Admin)
+        revenueShares: [{
+            sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            percentage: { type: Number, required: true },
+            professionalRole: { type: String } // e.g. Hero, Heroine, Producer
+        }],
+        platformFeeType: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
+        platformFeeValue: { type: Number, default: 0 },
         startDate: { type: Date, required: true },
         endDate: { type: Date, required: true },
         bidCount: { type: Number, default: 0 },
         status: {
             type: String,
-            enum: ['Draft', 'Active', 'Completed', 'Cancelled'],
-            default: 'Active',
+            enum: ['Draft', 'Pending', 'Active', 'Completed', 'Cancelled'],
+            default: 'Pending',
         },
         // Post-auction payment tracking
         winnerPaymentStatus: {

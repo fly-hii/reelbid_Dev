@@ -49,15 +49,18 @@ const BANNED_WORDS: string[] = [
     'hell', 'bastard', 'bastards',
     'crap', 'cunt', 'cunts',
     'piss', 'pissed', 'pissoff',
-    'wanker', 'wank', 'tosser', 'twat', 'bellend',
+    'wanker', 'wank', 'wankstain', 'tosser', 'twat', 'twatwaffle', 'bellend', 'cockwomble',
     'douche', 'douchebag', 'dumbass', 'jackass', 'smartass', 'badass', 'fatass',
+    'dickcheese', 'prick', 'pricks',
+    'cuck', 'simp', 'incel',
 
     // ═══════════════════════════════════════════════════════════════════
     //  ENGLISH — Violence / Drug references
     // ═══════════════════════════════════════════════════════════════════
     'kill', 'murder', 'rape', 'rapist', 'molest', 'pedophile', 'paedophile',
     'terrorist', 'terrorism', 'bomb', 'suicide',
-    'cocaine', 'heroin', 'meth', 'crack', 'weed', 'marijuana',
+    'cocaine', 'meth', 'crack', 'weed', 'marijuana',
+    'junkie', 'dopehead', 'snitch',
 
     // ═══════════════════════════════════════════════════════════════════
     //  ENGLISH — l33tspeak / obfuscation
@@ -69,99 +72,98 @@ const BANNED_WORDS: string[] = [
     // ═══════════════════════════════════════════════════════════════════
     //  HINDI (Romanized) — Comprehensive
     // ═══════════════════════════════════════════════════════════════════
-    'madarchod', 'madarchodh', 'madarchoot', 'maadarchod',
+    'madarchod', 'madarchodh', 'madarchoot', 'maadarchod', 'maa ki chut', 'mkc', 'mc',
     'bhenchod', 'behenchod', 'banchod', 'bhenchoot',
+    'behen ke laude', 'bhen ke laude', 'bkl',
     'chutiya', 'chutiye', 'chutiyap', 'chutiyapa', 'choot', 'chut',
-    'chuti', 'chuta', 'chute', 'chuto', 'choote', 'chootha', 'choothi', 'chootho',
-    'gaand', 'gaandu', 'gandu', 'gand', 'gandi', 'ganda', 'gande', 'gando', 'gandmasti',
-    'lund', 'lunda', 'lundi', 'lunde', 'lundo',
-    'lauda', 'laudi', 'laude', 'laudo', 'lawda', 'lawdi', 'lawde', 'lawdo',
-    'lavda', 'lavdi', 'lavde', 'lavdo', 'laudu', 'lodu', 'loda', 'lodi', 'lode', 'louda',
-    'randi', 'randwa', 'randibaaz', 'randikhanaa',
+    'chutmarani', 'chut marani',
+    'gaand', 'gaandu', 'gandu', 'gand', 'gandmasti',
+    'lund', 'lauda', 'lavda', 'lavde', 'laudu', 'lodu', 'loda',
+    'lavde ke baal',
+    'chod',
+    'randwa', 'randibaaz', 'randikhanaa', 'randa',
     'haramkhor', 'harami', 'haramzada', 'haramzadi', 'haram',
-    'kamina', 'kamine', 'kaminey', 'kamini',
+    'kamina', 'kamine', 'kaminey', 'kamini', 'kamine ki aulaad',
     'bhosdike', 'bhosdiwale', 'bhosda', 'bhosdika', 'bhosdiki',
     'jhatu', 'jhaatu', 'jhant', 'jhantu',
-    'dalla', 'dalal', 'dallal',
+
     'chinal', 'chinaal',
-    'saala', 'saali', 'sala', 'sali',
+    'saala', 'saali', 'sala', 'sali', 'saale harami',
     'kutte', 'kutta', 'kutiya', 'kutti',
     'ullu', 'gadha', 'bakchod', 'bakchodi',
+    'ullu ka pattha', 'ullu ka patha',
     'tatti', 'tatty', 'tatte', 'tattey',
-    'suwar', 'suar', 'sooar',
+    'suwar', 'suar', 'sooar', 'suar ki nasal',
     'raand', 'raandwa',
     'bhadwa', 'bhadwe', 'bhadwi',
+    'betichod', 'beti chod',
     'chodu', 'chodna', 'chodumal',
     'maaki', 'teri maa', 'tera baap',
     'hijra', 'hijda', 'chakka',
     'gandphati', 'ghatiya', 'nalayak',
     'besharam', 'bewakoof', 'bewda',
-    'mc', 'bc', 'mkc', 'bkl',
-    'chodu', 'chudail',
-    'pataka', 'item', 'maal',
+    'bc', 'bsdk', 'tmkb', 'tmkc',
+    'chudail',
+    'pataka', 'maal',
 
     // ═══════════════════════════════════════════════════════════════════
     //  TELUGU (Romanized) — Comprehensive
     // ═══════════════════════════════════════════════════════════════════
-    'lanja', 'lanjaa', 'lanji', 'lanje', 'lanju', 'lanjo', 'lanjakodaka', 'lanjakoduku', 'lanjodaka',
-    'lanjalakompa', 'lanjakoduku',
-    'dengey', 'dengu', 'denga', 'dengi', 'denge', 'dengo', 'dengulata', 'dengichukko', 'dengadam',
-    'modda', 'moddi', 'moddu', 'modde', 'moddo', 'moddalu', 'moddalakodaka', 'modda guddu',
+    'lanja', 'lanjaa', 'lanjakodaka', 'lanjakoduku', 'lanjodaka',
+    'lanja kodaka', 'lanja koduku', 'lanjaa kodaka',
+    'lanjalakompa',
+    'dengey', 'dengu', 'dengulata', 'dengichukko', 'dengadam',
+    'dengina', 'dengudu', 'dengutha', 'denguthaa',
+    'modda', 'moddalu', 'moddalakodaka', 'modda guddu',
     'pooku', 'pookulo', 'puku', 'pukulo',
-    'puka', 'puki', 'puko', 'puke', 'puku', 'pukka',
-    'pooka', 'pooki', 'pooke', 'pooko', 'pookka',
-    'pukudhi', 'pukudhaan', 'pukuna', 'pukni',
-    'pukodi', 'pukoda', 'pukulodu', 'pukulodi',
-    'pookodaka', 'pookodi', 'pookudhi',
-    'pukamundha', 'pukamundu',
-    'gudda', 'guddha', 'guddhalo',
-    'guddi', 'guddu', 'gudde', 'guddo', 'guddhi', 'guddhu', 'guddhe', 'guddho',
-    'sulli', 'sulla', 'sulligadu',
-    'sullu', 'sulle', 'sullo',
-    'erripooku', 'erripuku', 'erripuka', 'erri',
+    'pooku na kodaka', 'pooku kodaka', 'nee amma pooku',
+    'gudda', 'guddha', 'guddhalo', 'gudda dengu',
+    'sulli', 'sulla', 'sulligadu', 'sulli na kodaka',
+    'erripooku', 'erripuku', 'erripuka', 'erri', 'erri pooku',
     'bokka', 'bokkalo',
     'donga', 'dongalu',
     'kukka', 'kukkanaakoduku',
     'gadida', 'gadidha', 'gadidhakoothuru', 'gadidakoduku',
-    'naakodaka', 'naakoduku', 'naakoothuru',
+    'naakodaka', 'naakoduku', 'naakoothuru', 'na kodaka', 'naa kodaka',
     'denga', 'denginaa',
     'ammanaakoduku', 'ammanaayi',
-    'naakodaka', 'nee amma',
-    'nee yamma', 'neeyabba',
+    'nee amma', 'nee yamma', 'neeyabba',
+    'nee akka', 'nee akka pooku', 'nee akka kodaka',
     'pottelu', 'pottelodaa',
     'sachipovaali', 'sachipova',
     'nakku', 'nakkodaka',
     'reyy', 'reyyy',
     'muddha', 'muddhapuku',
     'lathkor', 'lathkoru',
-    'vedhava', 'vedhavaa', 'vedhavalanja',
+    'vedhava', 'vedhavaa', 'vedhavalanja', 'lanja vedhava',
     'baadkow', 'lafoot', 'lafuut',
     'jaffa', 'jaffakoduku',
     'poorinaakoduku', 'pooriga',
-    'dengutha', 'denguthaa',
-    'kodaka', 'naakodaka',
+    'kodaka',
     'pooku naa kodaka',
     'nee bondha', 'neebondha', 'bondha',
     'dhooram', 'dhoramga', 'dooranga',
     'lanjaa koduku', 'lanjakodthuru',
     'natakaaladhi', 'natakaalodu',
     'muudhapettu',
+    'pandi', 'pandi koduku', 'pandikoduku',
 
     // ═══════════════════════════════════════════════════════════════════
     //  TAMIL (Romanized)
     // ═══════════════════════════════════════════════════════════════════
     'thevdiya', 'thevidiya', 'thevidiyamavan', 'thevidiyapaiyan',
     'thevidiyapayale', 'thevidiyamunda',
+    'thevidiya payyan', 'thevidiya mavane', 'thevidiyapayyan',
     'oombu', 'oombuda', 'oombudi',
+    'ootha', 'oothu', 'oothadhe',
     'baadu', 'baadva', 'badu',
     'soothu', 'soothula', 'soothadi',
     'sunni', 'sunniya', 'sunniyan',
-    'koothi', 'kootha', 'koothu', 'koothe', 'kootho', 'kothi', 'kotha', 'kothu', 'kothe', 'kotho',
-    'koothia', 'koothichi', 'koothimavane',
-    'pundai', 'pundek', 'punda', 'pundi', 'pundu', 'punde', 'pundo', 'punday',
-    'mayir', 'mayiru', 'myiru', 'mayira', 'mayiri', 'mayire', 'mayiro',
+    'koothi', 'koothia', 'koothichi', 'koothimavane',
+    'pundai', 'pundek', 'punda', 'pundamavane', 'punda maari', 'pundamaari', 'pundekku',
+    'mayir', 'mayiru', 'myiru', 'mayirvechirukiya',
     'lavadai', 'lavada',
-    'thayoli', 'thayoliyan', 'thayir',
+    'thayoli', 'thayoliyan', 'thayir', 'thayir vita',
     'okka', 'okkala',
     'peenai', 'naaye', 'naay',
     'mootram', 'kakkoos',
@@ -173,36 +175,41 @@ const BANNED_WORDS: string[] = [
     'puluthi', 'kena',
     'kena paiyan', 'kenapunda',
     'porikki', 'pichai',
+    'loosu',
+    'alagu punda', 'alagupunda',
 
     // ═══════════════════════════════════════════════════════════════════
     //  KANNADA (Romanized)
     // ═══════════════════════════════════════════════════════════════════
-    'sule', 'sula', 'suli', 'sulu', 'sulo', 'soole', 'sooli', 'soola', 'soolo', 'sulemaga', 'sulemagane', 'sulemagne',
-    'tullu', 'tulla', 'tulli', 'tulle', 'tullo', 'thullu', 'thulla', 'thulli', 'thulle', 'thullo', 'tullina', 'tullhakla',
-    'tunne', 'tunna', 'tunni', 'tunnu', 'tunno', 'thunne', 'thunna', 'thunni', 'thunnu', 'thunno', 'tunnige',
+    'sule', 'sulemaga', 'sulemagane', 'sulemagne', 'sule maga',
+    'tullu', 'tullina', 'tullhakla',
+    'tunne', 'tunnige', 'tunni',
     'gudde', 'gudda', 'guddige',
-    'boli', 'bolimaga', 'bolimagne', 'bolimaklu',
+    'boli', 'bolimaga', 'bolimagne', 'bolimaklu', 'boli maga',
     'shata', 'shatamaga', 'shathav',
     'myga', 'ninna amman', 'ninge',
+    'ninn amma', 'ninn anna',
     'baadu', 'baadvaa',
     'bevarsi', 'bevarse', 'bevarsu',
     'sakkath', 'haadimaga', 'hadi',
     'naayi', 'naayimaga', 'naayimagne',
     'yedde', 'yeddenu',
     'keya', 'keyakla',
-    'gandu', 'gandsumaga',
+    'gandu', 'gandsumaga', 'gandu maga', 'gandumaga',
     'kothi', 'kothimaga',
     'huchcha', 'huchmaga',
     'lowda', 'lowdakya',
     'mundhe',
+    'loose maga', 'loosemaga',
+    'kurchi', 'kuri',
 
     // ═══════════════════════════════════════════════════════════════════
     //  MALAYALAM (Romanized)
     // ═══════════════════════════════════════════════════════════════════
-    'myre', 'myru', 'myra', 'myri', 'myro', 'myran', 'mayire',
-    'pooru', 'poora', 'poori', 'poore', 'pooro', 'puru', 'pura', 'puri', 'pure', 'puro', 'poorumone', 'pooruthi',
-    'kunna', 'kunni', 'kunnu', 'kunne', 'kunno', 'kunnayil', 'kunnan',
-    'thayoli', 'thayolu', 'thayola', 'thayole', 'thayolo', 'thayoliyan', 'thayolifamily',
+    'myre', 'myru', 'myran', 'mayire',
+    'pooru', 'poorumone', 'pooruthi',
+    'kunna', 'kunnayil', 'kunnan',
+    'thayoli', 'thayoliyan', 'thayolifamily',
     'thendi', 'thendimon', 'thendikuzhi',
     'pattikku', 'patti', 'pattimone',
     'kundhi', 'kundhimon',
@@ -215,26 +222,30 @@ const BANNED_WORDS: string[] = [
     'kandaroli', 'ninde amma',
     'ookkan', 'ooku', 'ookada',
     'kumbasaari', 'mairan',
+    'thettan', 'thettante mone', 'thettantemone',
+    'kandam', 'kandam patti', 'kandampatti',
+    'edi mone', 'edimone',
 
     // ═══════════════════════════════════════════════════════════════════
     //  BENGALI / BANGLA (Romanized)
     // ═══════════════════════════════════════════════════════════════════
     'banchod', 'banchot', 'baanchod',
-    'chuda', 'chudi', 'chudu', 'chude', 'chudo', 'chudir', 'chudmarani',
-    'magi', 'maga', 'magu', 'mage', 'mago', 'magir', 'maagi', 'magichuda',
-    'khankir', 'khanki', 'khanka', 'khanku', 'khanke', 'khanko', 'khankichele',
+    'chuda', 'chudi', 'chudir', 'chudmarani',
+    'magi', 'magir', 'maagi', 'magichuda',
+    'khankir', 'khanki', 'khankichele',
     'baal', 'baaler', 'baler',
     'shala', 'shali', 'shalir',
     'nangta', 'nengta',
     'bokachoda', 'boka',
-    'haramjada', 'haramjadi',
+    'haramjada', 'haramjadi', 'harami',
     'gumarao', 'gudmarao',
     'bhoda', 'bhodai', 'bhodar',
     'narkelbari', 'chotolok',
     'dhon', 'dhonkhur',
-    'choto', 'chodon',
+    'choto', 'chodon', 'chodu',
     'malaun', 'maalaun',
     'fatao', 'phatao',
+    'bhaat', 'bhaater',
 
     // ═══════════════════════════════════════════════════════════════════
     //  MARATHI (Romanized)
@@ -244,9 +255,9 @@ const BANNED_WORDS: string[] = [
     'bhadvya', 'bhadva', 'bhadvyaa', 'bhadvi',
     'chiknya', 'chikne',
     'jhavnya', 'jhavla', 'jhavnya',
-    'raand', 'raandi', 'raanda', 'raandu', 'raande', 'raando', 'raandechya',
-    'gandu', 'gandya', 'gand', 'gandi', 'ganda', 'gande', 'gando', 'gandit',
-    'choot', 'chuti', 'chuta', 'chutu', 'chute', 'chuto', 'chootmarany',
+    'raand', 'raandechya',
+    'gandu', 'gandya', 'gand', 'gandit',
+    'choot', 'chootmarany',
     'ghalya', 'ghalshi',
     'bokya', 'bokyaa',
     'popat', 'popatrao',
@@ -260,16 +271,16 @@ const BANNED_WORDS: string[] = [
     // ═══════════════════════════════════════════════════════════════════
     //  GUJARATI (Romanized)
     // ═══════════════════════════════════════════════════════════════════
-    'bhosadu', 'bhosdi', 'bhosda', 'bhosde', 'bhosdo', 'bhosdichod',
-    'gando', 'gandi', 'ganda', 'gande', 'gandu', 'gandoo', 'gandiya',
-    'lodu', 'lodi', 'loda', 'lode', 'lodo', 'lodiya',
-    'chodu', 'chodi', 'choda', 'chode', 'chodo', 'chodyu', 'chodvanu',
+    'bhosadu', 'bhosdi', 'bhosdichod',
+    'gando', 'gandi', 'gandoo', 'gandiya',
+    'lodu', 'lodiya', 'loda',
+    'chodu', 'chodyu', 'chodvanu',
     'fattuchod', 'fattu',
-    'randvu', 'randi', 'randyu',
+    'randvu', 'randyu',
     'bhadudo', 'bhadudi',
     'matanu', 'maanu',
     'saandu', 'saandas',
-    'dallu', 'dalali',
+
     'haramnu', 'haramkhor',
     'ghelu', 'ghelchodu',
     'bawasir',
@@ -278,11 +289,11 @@ const BANNED_WORDS: string[] = [
     //  PUNJABI (Romanized)
     // ═══════════════════════════════════════════════════════════════════
     'penchod', 'painchod', 'benchod',
-    'kutte', 'kutta', 'kutti', 'kuttu', 'kutto', 'kutteya', 'kuttiyan',
+    'kutte', 'kutteya', 'kuttiyan',
     'haraamzade', 'haraamzadi', 'haraamdi',
     'gandasa', 'gandasi',
     'bhendiyan', 'bhendi',
-    'tatti', 'tatta', 'tattu', 'tatte', 'tatto', 'tattian', 'tattiyan',
+    'tatti', 'tattian', 'tattiyan',
     'ullu', 'ulluda', 'ullude',
     'khotey', 'khoteyda',
     'tawaif',
@@ -336,31 +347,27 @@ const BANNED_WORDS: string[] = [
     //  Common Indian multilingual slang & abbreviations
     // ═══════════════════════════════════════════════════════════════════
     'mc', 'bc', 'mkc', 'bkl', 'bsdk', 'tmkb', 'tmkc',
-    'gfhp', 'lmkb', 'lmkc',
+    'gfhp', 'lmkb', 'lmkc', 'bklog',
 ];
 
 /**
- * Character substitution map for l33tspeak / homoglyph obfuscation detection
+ * Character substitution map for l33tspeak / obfuscation detection
  */
 const CHAR_MAP: Record<string, string> = {
-    '@': 'a', '4': 'a', '∆': 'a', 'α': 'a', 'а': 'a', // including cyrillic/greek
-    '!': 'i', '1': 'i', '|': 'i', 'ι': 'i', 'і': 'i',
-    '$': 's', '5': 's', '§': 's',
-    '0': 'o', 'ο': 'o', 'о': 'o', 'θ': 'o', 'ø': 'o',
-    '3': 'e', 'ε': 'e', 'е': 'e',
-    '7': 't', '+': 't', 'τ': 't', 'т': 't',
-    '8': 'b', 'ß': 'b', 'в': 'b',
-    '9': 'g', '6': 'g',
-    'ν': 'v', 'υ': 'u', 'μ': 'u', 'µ': 'u',
-    'к': 'k', 'κ': 'k',
-    'р': 'p', 'ρ': 'p',
-    'с': 'c',
-    'х': 'x', 'χ': 'x',
-    'у': 'y',
+    '@': 'a', '4': 'a',
+    '!': 'i', '1': 'i', '|': 'i',
+    '$': 's', '5': 's',
+    '0': 'o',
+    '3': 'e',
+    '7': 't',
+    '+': 't',
+    '8': 'b',
+    '9': 'g',
+    '6': 'g',
 };
 
 /**
- * Normalize text by replacing l33tspeak and homoglyph characters with their standard alphabet equivalents
+ * Normalize text by replacing l33tspeak characters with their letter equivalents
  */
 function deobfuscate(text: string): string {
     return text
@@ -412,17 +419,8 @@ function stripSeparators(text: string): string {
 export function containsProfanity(text: string): string | null {
     if (!text) return null;
 
-    // 0. Base text normalization:
-    // - Remove zero-width spaces, non-joiners, byte-order marks (invisible chars)
-    // - Normalize Unicode to decomposed form (NFD)
-    // - Strip out combining diacritical marks (accents, tildes, etc.)
-    const baseCleanText = text
-        .replace(/[\u200B-\u200D\uFEFF]/g, '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '');
-
     // Create multiple normalized versions to check
-    const lower = baseCleanText.toLowerCase();
+    const lower = text.toLowerCase();
 
     // Version 1: Original with separators removed
     const v1 = lower.replace(/[_\-\.]/g, '');

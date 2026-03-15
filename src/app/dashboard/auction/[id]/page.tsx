@@ -428,7 +428,7 @@ export default function SellerAuctionDetail() {
                                                 </div>
 
                                                 {/* Action: Send payment reminder (winner only) */}
-                                                {isWinner && auction.winnerPaymentStatus !== 'paid' && (
+                                                {(session?.user as any)?.role === 'Admin' && isWinner && auction.winnerPaymentStatus !== 'paid' && (
                                                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                                                         <button
                                                             className="btn-primary"
@@ -488,94 +488,96 @@ export default function SellerAuctionDetail() {
                                                         </div>
 
                                                         {/* Mark as Paid Section */}
-                                                        <div style={{
-                                                            borderTop: '1px solid rgba(245, 158, 11, 0.15)', paddingTop: '14px',
-                                                        }}>
-                                                            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '10px' }}>
-                                                                Mark payment as completed:
-                                                            </p>
-                                                            {!showPaymentConfirm ? (
-                                                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                                                    <button
-                                                                        className="btn-primary"
-                                                                        onClick={(e) => { e.stopPropagation(); setShowPaymentConfirm(true); }}
-                                                                        style={{
-                                                                            padding: '10px 20px', fontSize: '0.85rem',
-                                                                            background: 'var(--success)',
-                                                                            display: 'flex', alignItems: 'center', gap: '6px',
-                                                                        }}
-                                                                    >
-                                                                        <CheckCircle size={14} />
-                                                                        Mark as Paid
-                                                                    </button>
-                                                                </div>
-                                                            ) : (
-                                                                <div style={{
-                                                                    padding: '16px', borderRadius: '12px',
-                                                                    background: 'var(--bg-card)', border: '1px solid var(--border-primary)',
-                                                                }}>
-                                                                    <p style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '12px', color: 'var(--text-primary)' }}>
-                                                                        Select payment method:
-                                                                    </p>
+                                                        {(session?.user as any)?.role === 'Admin' && (
+                                                            <div style={{
+                                                                borderTop: '1px solid rgba(245, 158, 11, 0.15)', paddingTop: '14px',
+                                                            }}>
+                                                                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '10px' }}>
+                                                                    Mark payment as completed:
+                                                                </p>
+                                                                {!showPaymentConfirm ? (
                                                                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                                                         <button
                                                                             className="btn-primary"
-                                                                            onClick={(e) => { e.stopPropagation(); handleMarkAsPaid('cash'); }}
-                                                                            disabled={markingPaid}
+                                                                            onClick={(e) => { e.stopPropagation(); setShowPaymentConfirm(true); }}
                                                                             style={{
-                                                                                padding: '12px 18px', fontSize: '0.85rem',
-                                                                                background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                                                                                display: 'flex', alignItems: 'center', gap: '8px',
-                                                                                flex: '1', justifyContent: 'center', minWidth: '120px',
+                                                                                padding: '10px 20px', fontSize: '0.85rem',
+                                                                                background: 'var(--success)',
+                                                                                display: 'flex', alignItems: 'center', gap: '6px',
                                                                             }}
                                                                         >
-                                                                            {markingPaid ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />}
-                                                                            Cash
-                                                                        </button>
-                                                                        <button
-                                                                            className="btn-primary"
-                                                                            onClick={(e) => { e.stopPropagation(); handleMarkAsPaid('bank_transfer'); }}
-                                                                            disabled={markingPaid}
-                                                                            style={{
-                                                                                padding: '12px 18px', fontSize: '0.85rem',
-                                                                                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                                                                                display: 'flex', alignItems: 'center', gap: '8px',
-                                                                                flex: '1', justifyContent: 'center', minWidth: '120px',
-                                                                            }}
-                                                                        >
-                                                                            {markingPaid ? <Loader2 size={16} className="animate-spin" /> : <Building size={16} />}
-                                                                            Bank Transfer
-                                                                        </button>
-                                                                        <button
-                                                                            className="btn-primary"
-                                                                            onClick={(e) => { e.stopPropagation(); handleMarkAsPaid('online'); }}
-                                                                            disabled={markingPaid}
-                                                                            style={{
-                                                                                padding: '12px 18px', fontSize: '0.85rem',
-                                                                                background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-                                                                                display: 'flex', alignItems: 'center', gap: '8px',
-                                                                                flex: '1', justifyContent: 'center', minWidth: '120px',
-                                                                            }}
-                                                                        >
-                                                                            {markingPaid ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
-                                                                            Online
+                                                                            <CheckCircle size={14} />
+                                                                            Mark as Paid
                                                                         </button>
                                                                     </div>
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); setShowPaymentConfirm(false); }}
-                                                                        style={{
-                                                                            marginTop: '10px', width: '100%',
-                                                                            padding: '8px', borderRadius: '8px',
-                                                                            background: 'transparent', border: '1px solid var(--border-primary)',
-                                                                            color: 'var(--text-muted)', fontSize: '0.8rem',
-                                                                            cursor: 'pointer', transition: 'all 0.2s',
-                                                                        }}
-                                                                    >
-                                                                        Cancel
-                                                                    </button>
-                                                                </div>
-                                                            )}
-                                                        </div>
+                                                                ) : (
+                                                                    <div style={{
+                                                                        padding: '16px', borderRadius: '12px',
+                                                                        background: 'var(--bg-card)', border: '1px solid var(--border-primary)',
+                                                                    }}>
+                                                                        <p style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '12px', color: 'var(--text-primary)' }}>
+                                                                            Select payment method:
+                                                                        </p>
+                                                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                                            <button
+                                                                                className="btn-primary"
+                                                                                onClick={(e) => { e.stopPropagation(); handleMarkAsPaid('cash'); }}
+                                                                                disabled={markingPaid}
+                                                                                style={{
+                                                                                    padding: '12px 18px', fontSize: '0.85rem',
+                                                                                    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                                                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                                                    flex: '1', justifyContent: 'center', minWidth: '120px',
+                                                                                }}
+                                                                            >
+                                                                                {markingPaid ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />}
+                                                                                Cash
+                                                                            </button>
+                                                                            <button
+                                                                                className="btn-primary"
+                                                                                onClick={(e) => { e.stopPropagation(); handleMarkAsPaid('bank_transfer'); }}
+                                                                                disabled={markingPaid}
+                                                                                style={{
+                                                                                    padding: '12px 18px', fontSize: '0.85rem',
+                                                                                    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                                                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                                                    flex: '1', justifyContent: 'center', minWidth: '120px',
+                                                                                }}
+                                                                            >
+                                                                                {markingPaid ? <Loader2 size={16} className="animate-spin" /> : <Building size={16} />}
+                                                                                Bank Transfer
+                                                                            </button>
+                                                                            <button
+                                                                                className="btn-primary"
+                                                                                onClick={(e) => { e.stopPropagation(); handleMarkAsPaid('online'); }}
+                                                                                disabled={markingPaid}
+                                                                                style={{
+                                                                                    padding: '12px 18px', fontSize: '0.85rem',
+                                                                                    background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+                                                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                                                    flex: '1', justifyContent: 'center', minWidth: '120px',
+                                                                                }}
+                                                                            >
+                                                                                {markingPaid ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
+                                                                                Online
+                                                                            </button>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); setShowPaymentConfirm(false); }}
+                                                                            style={{
+                                                                                marginTop: '10px', width: '100%',
+                                                                                padding: '8px', borderRadius: '8px',
+                                                                                background: 'transparent', border: '1px solid var(--border-primary)',
+                                                                                color: 'var(--text-muted)', fontSize: '0.8rem',
+                                                                                cursor: 'pointer', transition: 'all 0.2s',
+                                                                            }}
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
 
@@ -727,14 +729,16 @@ export default function SellerAuctionDetail() {
                                                             {offer.percentageAdjustment > 0 ? '+' : ''}{offer.percentageAdjustment}% of winning bid
                                                         </p>
                                                     </div>
-                                                    <div style={{ display: 'flex', gap: '6px' }}>
-                                                        <button className="btn-primary" style={{ padding: '8px 16px', fontSize: '0.78rem', background: 'var(--success)' }}>
-                                                            Accept
-                                                        </button>
-                                                        <button className="btn-secondary" style={{ padding: '8px 16px', fontSize: '0.78rem' }}>
-                                                            Reject
-                                                        </button>
-                                                    </div>
+                                                            {(session?.user as any)?.role === 'Admin' && (
+                                                                <div style={{ display: 'flex', gap: '6px' }}>
+                                                                    <button className="btn-primary" style={{ padding: '8px 16px', fontSize: '0.78rem', background: 'var(--success)' }}>
+                                                                        Accept
+                                                                    </button>
+                                                                    <button className="btn-secondary" style={{ padding: '8px 16px', fontSize: '0.78rem' }}>
+                                                                        Reject
+                                                                    </button>
+                                                                </div>
+                                                            )}
                                                 </div>
                                             ))}
                                         </div>
@@ -753,18 +757,20 @@ export default function SellerAuctionDetail() {
                                     (₹{Math.round(winningAmount * 0.95).toLocaleString()} — ₹{Math.round(winningAmount * 1.05).toLocaleString()}).
                                     Their offer will be sent to you for approval.
                                 </p>
-                                <button
-                                    className="btn-primary"
-                                    onClick={handleNotifyRunnerUps}
-                                    disabled={sendingNotification}
-                                    style={{
-                                        padding: '12px 24px', fontSize: '0.9rem',
-                                        display: 'flex', alignItems: 'center', gap: '8px',
-                                    }}
-                                >
-                                    {sendingNotification ? <Loader2 size={16} className="animate-spin" /> : <Megaphone size={16} />}
-                                    Notify Runner-Up Bidders
-                                </button>
+                                        {(session?.user as any)?.role === 'Admin' && (
+                                            <button
+                                                className="btn-primary"
+                                                onClick={handleNotifyRunnerUps}
+                                                disabled={sendingNotification}
+                                                style={{
+                                                    padding: '12px 24px', fontSize: '0.9rem',
+                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                }}
+                                            >
+                                                {sendingNotification ? <Loader2 size={16} className="animate-spin" /> : <Megaphone size={16} />}
+                                                Notify Runner-Up Bidders
+                                            </button>
+                                        )}
                             </div>
                         )}
                     </div>
