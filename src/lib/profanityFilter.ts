@@ -401,99 +401,237 @@ function stripSeparators(text: string): string {
     return text.replace(/[\s._\-]+/g, '');
 }
 
+function escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Whitelist of common legitimate words that contain short banned substrings.
+ * These words will be removed from the text before profanity checking to prevent
+ * false positives (e.g., "ass" inside "association").
+ */
+const WHITELISTED_WORDS: string[] = [
+    // Contains "ass"
+    'association', 'associations', 'associate', 'associates', 'associated', 'associating',
+    'class', 'classes', 'classic', 'classical', 'classics', 'classification', 'classified', 'classify',
+    'pass', 'passed', 'passes', 'passing', 'passenger', 'passengers', 'passion', 'passionate', 'passive',
+    'mass', 'masses', 'massive', 'massage', 'massachusetts',
+    'bass', 'embassy', 'ambassador', 'embarrass', 'embarrassed', 'embarrassing',
+    'glass', 'glasses', 'glassware',
+    'grass', 'grasses', 'grassland', 'grassroots',
+    'brass', 'brassy',
+    'assess', 'assessed', 'assessment', 'assessments', 'assessing', 'assessor',
+    'assign', 'assigned', 'assignment', 'assignments', 'assigning',
+    'assist', 'assisted', 'assistant', 'assistance', 'assisting',
+    'assert', 'asserted', 'assertion', 'assertive', 'asserting',
+    'assemble', 'assembled', 'assembly', 'assembling',
+    'asset', 'assets',
+    'assume', 'assumed', 'assumes', 'assuming', 'assumption', 'assumptions',
+    'assure', 'assured', 'assurance', 'assurances', 'assuring',
+    'cassette', 'casserole', 'hassle', 'lasso', 'morass', 'crass',
+    'assassin', 'assassinate', 'assassination',
+    'password', 'passwords',
+    // Contains "hell"
+    'hello', 'shell', 'shells', 'shelling', 'michelin', 'seashell', 'eggshell', 'nutshell',
+    'hellenistic', 'hellenic',
+    // Contains "damn"
+    'adamant', 'adamantly',
+    // Contains "cum"
+    'document', 'documents', 'documented', 'documenting', 'documentation',
+    'circumstance', 'circumstances', 'circumvent',
+    'accumulate', 'accumulated', 'accumulation',
+    'cucumber', 'incumbent',
+    // Contains "sex"
+    'sextant', 'sextet', 'sextuple',
+    // Contains "homo"
+    'homogeneous', 'homogenize', 'homologous', 'homolog',
+    // Contains "anal"
+    'analog', 'analogy', 'analogous', 'analysis', 'analyst', 'analysts', 'analytical', 'analyze', 'analyzed',
+    'canal', 'banal', 'final', 'finals', 'finalist', 'finalize',
+    'national', 'international', 'functional', 'traditional', 'professional',
+    'signal', 'penal', 'renal', 'journal',
+    // Contains "ho"
+    'honest', 'honestly', 'honesty', 'honor', 'honored', 'honorary', 'hope', 'hopeful',
+    'home', 'homework', 'homemade', 'homepage', 'homecoming',
+    'hospital', 'hospitality', 'host', 'hosted', 'hosting', 'hotel', 'house', 'household',
+    'hour', 'hourly', 'holiday', 'holidays',
+    // Contains "kill"
+    'skill', 'skills', 'skilled', 'skillful', 'painkiller', 'thriller',
+    // Contains "rape"
+    'drape', 'drapes', 'scrape', 'scraped', 'grape', 'grapes', 'grapefruit',
+    'trapeze', 'skyscraper',
+    // Contains "drug"
+    'shrug', 'shrugged', 'shrugging',
+    // Contains "cock"
+    'peacock', 'peacocks', 'hancock',
+    // Contains "hoe"
+    'shoe', 'shoes', 'horseshoe', 'phoenix',
+    // Contains "nig"
+    'night', 'nights', 'nighttime', 'nightmare', 'nightclub', 'nightly',
+    'knight', 'knights',
+    // Contains "fag"
+    'flag', 'flags', 'flagged', 'flagship',
+    // Contains "dyke"
+    'vandyke',
+    // Contains "crap"
+    'scrap', 'scrape', 'scraps', 'scrapped', 'scraping',
+    // Contains "piss"
+    'mississippi',
+    // Contains "weed"
+    'tweed', 'seaweed',
+    // Contains "crack"
+    'cracker', 'firecracker',
+    // Contains "bomb"
+    'bombard', 'bombastic',
+    // Contains "erotic"
+    'heroic', 'heroics',
+    // Contains "escort"
+    'escorted', 'escorting',
+    // Contains "fan" related
+    'fan', 'fans', 'fanbase', 'fandom', 'fanatic', 'fanatics', 'fancy', 'fantasy', 'fantastic',
+    'infant', 'infantry',
+    // Contains "hit"
+    'architecture', 'architect', 'white', 'exhibit', 'exhibition',
+    // Other common false positives
+    'therapist', 'therapeutic', 'therapy',
+    'manslaughter',
+    'scunthorpe', 'penistone', 'lightwater', 'cockermouth',
+    'title', 'titled', 'titling', 'subtitle', 'subtitles', 'entitled',
+    'button', 'buttons', 'buttress', 'butterscotch', 'butterfly', 'butter', 'buttermilk',
+    'cocktail', 'cocktails',
+    'fakepath',
+];
+
+// Build a Set for fast lookup
+const WHITELIST_SET = new Set(WHITELISTED_WORDS);
+
+/**
+ * Remove whitelisted words from text to prevent false positives.
+ * Replaces whitelisted words with spaces so they don't form new words.
+ */
+function removeWhitelistedWords(text: string): string {
+    let result = text;
+    // Sort by length descending so longer words are replaced first
+    const sorted = [...WHITELISTED_WORDS].sort((a, b) => b.length - a.length);
+    for (const word of sorted) {
+        const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'gi');
+        result = result.replace(regex, ' '.repeat(word.length));
+    }
+    return result;
+}
+
+/**
+ * Check if a match is actually a false positive because it's part of a whitelisted word.
+ * Examines the original text to see if the match position falls within a whitelisted word.
+ */
+function isWhitelistedContext(originalText: string, bannedWord: string): boolean {
+    const lower = originalText.toLowerCase();
+    const words = lower.split(/[^a-z]+/).filter(Boolean);
+    
+    // Check if any word in the original text is whitelisted and contains the banned word
+    for (const w of words) {
+        if (WHITELIST_SET.has(w) && w.includes(bannedWord)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * Check if text contains profanity.
  * Returns the first matched bad word, or null if clean.
  *
  * Detection layers:
- *  1. Direct match (lowercased)
- *  2. Separators removed (_-.)
- *  3. ALL non-alpha stripped
- *  4. L33tspeak decoded
- *  5. Repeated characters collapsed ("lanjaaaa" → "lanja")
- *  6. Spaced-out characters collapsed ("l a n j a" → "lanja")
- *  7. Combined: deobfuscate + collapse repeats + strip separators
- *  8. Wildcard matching (* # @ as placeholders)
- *  9. Elongated regex: each char in banned word allows repeats + optional separators
+ *  1. Word-boundary matching on original text
+ *  2. Word-boundary matching on normalized versions (separators/l33t/repeats removed)
+ *  3. Wildcard matching (* # @ as placeholders)
+ *  4. Elongated regex: each char in banned word allows repeats + optional separators
+ *
+ * All checks use word-boundary matching and whitelist filtering to prevent
+ * false positives on legitimate words like "association", "class", "pass", etc.
  */
 export function containsProfanity(text: string): string | null {
     if (!text) return null;
 
-    // Create multiple normalized versions to check
     const lower = text.toLowerCase();
 
-    // Version 1: Original with separators removed
-    const v1 = lower.replace(/[_\-\.]/g, '');
+    // First, check if the entire text is composed of whitelisted / safe words
+    // by removing whitelisted words and checking what remains
+    const sanitized = removeWhitelistedWords(lower);
 
-    // Version 2: Strip ALL non-alphanumeric (catches f**k, s**t, f###k, etc.)
-    const v2 = lower.replace(/[^a-z0-9]/g, '');
-
-    // Version 3: Replace l33tspeak + strip remaining special chars
-    const v3 = deobfuscate(lower).replace(/[^a-z]/g, '');
-
-    // Version 4: Replace * and special chars with nothing (f**k → fk, then check patterns)
-    // But also try replacing each * with each vowel for smarter matching
-    const v4 = lower.replace(/[^a-z@$!10357+896]/g, '');
+    // Create multiple normalized versions to check (from the sanitized text)
+    const v1 = sanitized.replace(/[_\-\.]/g, ' ');
+    const v2 = sanitized.replace(/[^a-z0-9\s]/g, '');
+    const v3 = deobfuscate(sanitized).replace(/[^a-z\s]/g, '');
+    const v4 = sanitized.replace(/[^a-z@$!10357+896\s]/g, '');
     const v4decoded = deobfuscate(v4);
-
-    // Version 5: Collapse repeated characters ("lanjaaaa" → "lanja", "fuuuck" → "fuck")
-    const v5 = collapseRepeats(v2);
-
-    // Version 6: Collapse spaced-out characters ("l a n j a" → "lanja")
-    const v6 = collapseSpacedChars(lower).replace(/[^a-z]/g, '');
-
-    // Version 7: Combined — deobfuscate + strip separators + collapse repeats
-    const v7 = collapseRepeats(deobfuscate(stripSeparators(lower)).replace(/[^a-z]/g, ''));
-
-    // Version 8: Collapse repeats on the l33tspeak-decoded version
+    const v5 = collapseRepeats(sanitized.replace(/[^a-z0-9]/g, ' '));
+    const v6 = collapseSpacedChars(sanitized).replace(/[^a-z\s]/g, '');
+    const v7 = collapseRepeats(deobfuscate(stripSeparators(sanitized)).replace(/[^a-z]/g, ' '));
     const v8 = collapseRepeats(v3);
 
     const versions = [v1, v2, v3, v4decoded, v5, v6, v7, v8];
 
     for (const word of BANNED_WORDS) {
-        // Skip very short words (2 chars) for elongated regex to avoid false positives
         const wordClean = word.replace(/\s+/g, '');
 
+        // For very short banned words (≤3 chars like "ass", "cum", "fag", "ho"),
+        // only match as whole words to avoid false positives
+        const isShortWord = wordClean.length <= 3;
+
         for (const version of versions) {
-            // Check if the word is contained directly
-            if (version.includes(wordClean)) {
-                return word;
-            }
-            // Check for exact word match using word boundaries
-            const regex = new RegExp(`(^|[^a-z])${escapeRegex(wordClean)}([^a-z]|$)`, 'i');
-            if (regex.test(version)) {
-                return word;
+            if (isShortWord) {
+                // Only whole-word match for short words
+                const wholeWordRegex = new RegExp(`(?:^|\\s|[^a-z])${escapeRegex(wordClean)}(?:\\s|[^a-z]|$)`, 'i');
+                if (wholeWordRegex.test(version)) {
+                    // Double-check against original text context
+                    if (!isWhitelistedContext(text, wordClean)) {
+                        return word;
+                    }
+                }
+            } else {
+                // For longer words, use word-boundary matching
+                const boundaryRegex = new RegExp(`(?:^|[^a-z])${escapeRegex(wordClean)}(?:[^a-z]|$)`, 'i');
+                if (boundaryRegex.test(version)) {
+                    if (!isWhitelistedContext(text, wordClean)) {
+                        return word;
+                    }
+                }
+                // Also check simple includes but verify it's not whitelisted
+                if (version.includes(wordClean)) {
+                    if (!isWhitelistedContext(text, wordClean)) {
+                        return word;
+                    }
+                }
             }
         }
 
-        // Also check original text with * treated as wildcard letters
-        // This catches patterns like f**k, s**t, b**ch etc.
-        if (wordClean.length >= 3) {
+        // Wildcard matching — only for longer words to avoid false positives
+        if (wordClean.length >= 4) {
             const wildcardPattern = wordClean.split('').map(ch => {
                 const escaped = escapeRegex(ch);
                 return `(?:${escaped}|[\\*\\#\\@\\$\\!\\?\\-\\_\\.])`;
             }).join('');
-            const wildcardRegex = new RegExp(wildcardPattern, 'i');
+            const wildcardRegex = new RegExp(`(?:^|[^a-z])${wildcardPattern}(?:[^a-z]|$)`, 'i');
             if (wildcardRegex.test(lower)) {
-                return word;
+                if (!isWhitelistedContext(text, wordClean)) {
+                    return word;
+                }
             }
         }
 
-        // ── Elongated / stretched word detection ──
-        // Builds a regex where each character can be repeated 1+ times,
-        // with optional separators (spaces, dots, dashes, underscores) in between.
-        // "lanja" matches: "lanjaa", "lanjaaaa", "l.a.n.j.a", "l a n j a a a",
-        //                  "lllanja", "laannjjaa", etc.
-        if (wordClean.length >= 3) {
+        // Elongated / stretched word detection — only for words with 4+ chars
+        if (wordClean.length >= 4) {
             const elongatedParts = wordClean.split('').map(ch => {
                 const escaped = escapeRegex(ch);
-                return `${escaped}+`;  // each char can repeat 1+ times
+                return `${escaped}+`;
             });
-            // Allow optional separators (space, dot, dash, underscore, *, #) between chars
             const elongatedPattern = elongatedParts.join('[\\s._\\-*#@!?]*');
-            const elongatedRegex = new RegExp(elongatedPattern, 'i');
+            const elongatedRegex = new RegExp(`(?:^|[^a-z])${elongatedPattern}(?:[^a-z]|$)`, 'i');
             if (elongatedRegex.test(lower)) {
-                return word;
+                if (!isWhitelistedContext(text, wordClean)) {
+                    return word;
+                }
             }
         }
     }
@@ -518,8 +656,4 @@ export function validateFields(fields: Record<string, string>): string | null {
         }
     }
     return null;
-}
-
-function escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

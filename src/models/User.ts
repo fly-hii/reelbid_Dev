@@ -9,7 +9,7 @@ const UserSchema = new mongoose.Schema(
         image: { type: String },
         role: {
             type: String,
-            enum: ['Admin', 'Seller', 'Buyer'],
+            enum: ['Admin', 'Seller', 'Buyer', 'President'],
             default: 'Buyer',
             required: true,
         },

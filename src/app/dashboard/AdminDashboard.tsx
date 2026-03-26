@@ -8,7 +8,8 @@ import {
     UserCheck, Store, ShoppingBag, Clock, CheckCircle, Trash2,
     ChevronDown, Eye, Coins, AlertTriangle, Crown, Search,
     PlusCircle, Edit3, Layers, Lock, Unlock, RefreshCcw,
-    Wallet, History, ArrowDownLeft, ArrowUpFromLine, XCircle, X
+    Wallet, History, ArrowDownLeft, ArrowUpFromLine, XCircle, X,
+    Star, MapPin, Image, Camera
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -21,7 +22,7 @@ export default function AdminDashboard() {
     const [transactions, setTransactions] = useState<any[]>([]);
     const [withdrawRequests, setWithdrawRequests] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeSection, setActiveSection] = useState<'overview' | 'sellers' | 'buyers' | 'auctions' | 'wallet' | 'withdrawals' | 'tiers'>('overview');
+    const [activeSection, setActiveSection] = useState<'overview' | 'sellers' | 'buyers' | 'auctions' | 'wallet' | 'withdrawals' | 'tiers' | 'fans'>('overview');
     const [searchText, setSearchText] = useState('');
 
     useEffect(() => {
@@ -50,6 +51,19 @@ export default function AdminDashboard() {
     const [editingSellerId, setEditingSellerId] = useState<string | null>(null);
     const [savingSeller, setSavingSeller] = useState(false);
     const [sellerForm, setSellerForm] = useState({ name: '', email: '', password: '', phone: '', address: '', city: '', state: '', pincode: '' });
+
+    // Fan Associations
+    const [fanAssociations, setFanAssociations] = useState<any[]>([]);
+    const [showFanForm, setShowFanForm] = useState(false);
+    const [savingFan, setSavingFan] = useState(false);
+    const [fanForm, setFanForm] = useState({
+        presidentName: '', presidentEmail: '', presidentPassword: '', presidentPhone: '',
+        heroName: '', areaName: '', description: '', themeColor: '#8b5cf6'
+    });
+    const [fanHeroImage, setFanHeroImage] = useState('');
+    const [fanBannerImage, setFanBannerImage] = useState('');
+    const [editingFanId, setEditingFanId] = useState<string | null>(null);
+    const [fanGalleryImages, setFanGalleryImages] = useState<string[]>([]);
     
     const handleAddRevenueShare = () => {
         if (!selectedSellerId || !revPercentage || !revRole) return toast.error('Fill all share details');
@@ -144,14 +158,15 @@ export default function AdminDashboard() {
 
     const fetchAll = async () => {
         try {
-            const [statsRes, tiersRes, txRes, withdrawalsRes] = await Promise.all([
+            const [statsRes, tiersRes, txRes, withdrawalsRes, fansRes] = await Promise.all([
                 fetch('/api/admin/stats'),
                 fetch('/api/admin/tiers'),
                 fetch('/api/wallet/transactions?limit=50'),
                 fetch('/api/admin/withdrawals'),
+                fetch('/api/fan-associations'),
             ]);
-            const [statsData, tiersData, txData, withdrawalsData] = await Promise.all([
-                statsRes.json(), tiersRes.json(), txRes.json(), withdrawalsRes.json()
+            const [statsData, tiersData, txData, withdrawalsData, fansData] = await Promise.all([
+                statsRes.json(), tiersRes.json(), txRes.json(), withdrawalsRes.json(), fansRes.json()
             ]);
             setStats(statsData.stats);
             setUsers(statsData.users || []);
@@ -159,6 +174,7 @@ export default function AdminDashboard() {
             setTiers(Array.isArray(tiersData) ? tiersData : []);
             setTransactions(txData.transactions || []);
             setWithdrawRequests(Array.isArray(withdrawalsData) ? withdrawalsData : []);
+            setFanAssociations(fansData.associations || []);
         } catch { }
         setLoading(false);
     };
@@ -351,6 +367,87 @@ export default function AdminDashboard() {
         } catch (err: any) { toast.error(err.message); }
     };
 
+    // Fan Association Handlers
+    const handleFanSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setSavingFan(true);
+        try {
+            if (editingFanId) {
+                // Update existing
+                const res = await fetch('/api/fan-associations', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        associationId: editingFanId,
+                        heroImage: fanHeroImage,
+                        bannerImage: fanBannerImage,
+                        galleryImages: fanGalleryImages,
+                        description: fanForm.description,
+                        themeColor: fanForm.themeColor,
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+                toast.success('Fan Association updated!');
+            } else {
+                // Create new
+                const res = await fetch('/api/fan-associations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ...fanForm,
+                        heroImage: fanHeroImage,
+                        bannerImage: fanBannerImage,
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+                toast.success('Fan Association created! President can now login.');
+            }
+            setShowFanForm(false);
+            setEditingFanId(null);
+            setFanForm({ presidentName: '', presidentEmail: '', presidentPassword: '', presidentPhone: '', heroName: '', areaName: '', description: '', themeColor: '#8b5cf6' });
+            setFanHeroImage('');
+            setFanBannerImage('');
+            setFanGalleryImages([]);
+            fetchAll();
+        } catch (err: any) {
+            toast.error(err.message);
+        } finally {
+            setSavingFan(false);
+        }
+    };
+
+    const handleDeleteFan = async (id: string) => {
+        if (!confirm('Delete this fan association?')) return;
+        try {
+            const res = await fetch(`/api/fan-associations?id=${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            toast.success('Fan association deleted');
+            fetchAll();
+        } catch (err: any) { toast.error(err.message); }
+    };
+
+    const handleEditFanClick = (assoc: any) => {
+        setEditingFanId(assoc._id);
+        setFanForm({
+            presidentName: '', presidentEmail: '', presidentPassword: '', presidentPhone: '',
+            heroName: assoc.heroName || '', areaName: assoc.areaName || '',
+            description: assoc.description || '', themeColor: assoc.themeColor || '#8b5cf6',
+        });
+        setFanHeroImage(assoc.heroImage || '');
+        setFanBannerImage(assoc.bannerImage || '');
+        setFanGalleryImages(assoc.galleryImages || []);
+        setShowFanForm(true);
+    };
+
+    const handleImageUpload = (file: File, setter: (val: string) => void) => {
+        const reader = new FileReader();
+        reader.onloadend = () => setter(reader.result as string);
+        reader.readAsDataURL(file);
+    };
+
     if (loading) {
         return (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
@@ -393,6 +490,7 @@ export default function AdminDashboard() {
         { key: 'wallet', label: 'Wallet Logs', icon: <Wallet size={18} /> },
         { key: 'withdrawals', label: 'Withdrawals', icon: <ArrowUpFromLine size={18} /> },
         { key: 'tiers', label: 'Tier Rules', icon: <Crown size={18} /> },
+        { key: 'fans', label: `Fan Clubs (${fanAssociations.length})`, icon: <Star size={18} /> },
     ];
 
     return (
@@ -615,6 +713,7 @@ export default function AdminDashboard() {
                                                     }}>
                                                     <option value="Buyer">Buyer</option>
                                                     <option value="Seller">Seller</option>
+                                                    <option value="President">President</option>
                                                     <option value="Admin">Admin</option>
                                                 </select>
                                             </td>
@@ -1116,6 +1215,226 @@ export default function AdminDashboard() {
                                     </div>
                                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Min Balance: ₹{tier.minBalance?.toLocaleString()}</p>
                                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Bid Limit: ₹{tier.bidLimit?.toLocaleString()}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
+
+                {/* === FAN ASSOCIATIONS === */}
+                {activeSection === 'fans' && (
+                    <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Star size={22} style={{ color: 'var(--warning)' }} />
+                                Fan Associations
+                            </h2>
+                            <button onClick={() => {
+                                if (showFanForm) {
+                                    setShowFanForm(false);
+                                    setEditingFanId(null);
+                                    setFanForm({ presidentName: '', presidentEmail: '', presidentPassword: '', presidentPhone: '', heroName: '', areaName: '', description: '', themeColor: '#8b5cf6' });
+                                    setFanHeroImage('');
+                                    setFanBannerImage('');
+                                } else {
+                                    setShowFanForm(true);
+                                    setEditingFanId(null);
+                                }
+                            }}
+                                className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <PlusCircle size={16} />
+                                {showFanForm ? 'Cancel' : 'Add Fan Association'}
+                            </button>
+                        </div>
+
+                        {showFanForm && (
+                            <div className="card animate-slide-up" style={{ padding: '24px', marginTop: '16px', background: 'var(--bg-card)' }}>
+                                <h3 style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {editingFanId ? <Edit3 size={18} /> : <Star size={18} style={{ color: 'var(--warning)' }} />}
+                                    {editingFanId ? 'Edit Fan Association' : 'Create New Fan Association'}
+                                </h3>
+                                <form onSubmit={handleFanSubmit}>
+                                    {/* Hero & Area Info */}
+                                    <div style={{ marginBottom: '20px' }}>
+                                        <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent-text)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <Star size={14} /> Hero & Area Details
+                                        </h4>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                                            <div>
+                                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Hero Name *</label>
+                                                <input className="input-field" value={fanForm.heroName} onChange={e => setFanForm({ ...fanForm, heroName: e.target.value })} placeholder="e.g. Allu Arjun" required disabled={!!editingFanId} />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Area Name *</label>
+                                                <input className="input-field" value={fanForm.areaName} onChange={e => setFanForm({ ...fanForm, areaName: e.target.value })} placeholder="e.g. Kakinada" required disabled={!!editingFanId} />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Theme Color</label>
+                                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                    <input type="color" value={fanForm.themeColor} onChange={e => setFanForm({ ...fanForm, themeColor: e.target.value })} style={{ width: '40px', height: '40px', border: 'none', borderRadius: '8px', cursor: 'pointer' }} />
+                                                    <input className="input-field" value={fanForm.themeColor} onChange={e => setFanForm({ ...fanForm, themeColor: e.target.value })} style={{ flex: 1 }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div style={{ marginTop: '12px' }}>
+                                            <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Description</label>
+                                            <textarea className="input-field" rows={2} value={fanForm.description} onChange={e => setFanForm({ ...fanForm, description: e.target.value })} placeholder="About this fan association..." />
+                                        </div>
+                                    </div>
+
+                                    {/* President Details (only for new) */}
+                                    {!editingFanId && (
+                                        <div style={{ marginBottom: '20px', borderTop: '1px solid var(--border-primary)', paddingTop: '16px' }}>
+                                            <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent-text)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Users size={14} /> President Login Details
+                                            </h4>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                                                <div>
+                                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>President Name *</label>
+                                                    <input className="input-field" value={fanForm.presidentName} onChange={e => setFanForm({ ...fanForm, presidentName: e.target.value })} required />
+                                                </div>
+                                                <div>
+                                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>President Email *</label>
+                                                    <input type="email" className="input-field" value={fanForm.presidentEmail} onChange={e => setFanForm({ ...fanForm, presidentEmail: e.target.value })} required />
+                                                </div>
+                                                <div>
+                                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Password *</label>
+                                                    <input type="password" className="input-field" value={fanForm.presidentPassword} onChange={e => setFanForm({ ...fanForm, presidentPassword: e.target.value })} required />
+                                                </div>
+                                                <div>
+                                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Phone</label>
+                                                    <input type="tel" className="input-field" value={fanForm.presidentPhone} onChange={e => setFanForm({ ...fanForm, presidentPhone: e.target.value })} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Images */}
+                                    <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: '16px', marginBottom: '20px' }}>
+                                        <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent-text)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <Camera size={14} /> Photos
+                                        </h4>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                                            <div>
+                                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Hero Photo</label>
+                                                <input type="file" accept="image/*" className="input-field" onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) handleImageUpload(file, setFanHeroImage);
+                                                }} />
+                                                {fanHeroImage && <img src={fanHeroImage} alt="hero" style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover', marginTop: '8px' }} />}
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Banner Image</label>
+                                                <input type="file" accept="image/*" className="input-field" onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) handleImageUpload(file, setFanBannerImage);
+                                                }} />
+                                                {fanBannerImage && <img src={fanBannerImage} alt="banner" style={{ width: '120px', height: '50px', borderRadius: '8px', objectFit: 'cover', marginTop: '8px' }} />}
+                                            </div>
+                                        </div>
+                                        {editingFanId && (
+                                            <div style={{ marginTop: '14px' }}>
+                                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Gallery Images (up to 6)</label>
+                                                <input type="file" multiple accept="image/*" className="input-field" onChange={(e) => {
+                                                    const files = Array.from(e.target.files || []).slice(0, 6);
+                                                    const newImages: string[] = [];
+                                                    let count = 0;
+                                                    files.forEach(file => {
+                                                        const reader = new FileReader();
+                                                        reader.onloadend = () => {
+                                                            newImages.push(reader.result as string);
+                                                            count++;
+                                                            if (count === files.length) {
+                                                                setFanGalleryImages(prev => [...prev, ...newImages].slice(0, 6));
+                                                            }
+                                                        };
+                                                        reader.readAsDataURL(file);
+                                                    });
+                                                }} />
+                                                {fanGalleryImages.length > 0 && (
+                                                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                                                        {fanGalleryImages.map((img, i) => (
+                                                            <div key={i} style={{ position: 'relative' }}>
+                                                                <img src={img} alt="gallery" style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover' }} />
+                                                                <button type="button" onClick={() => setFanGalleryImages(prev => prev.filter((_, idx) => idx !== i))}
+                                                                    style={{ position: 'absolute', top: '-4px', right: '-4px', background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '50%', width: '18px', height: '18px', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                                        <button type="button" className="btn-secondary" onClick={() => {
+                                            setShowFanForm(false);
+                                            setEditingFanId(null);
+                                        }}>Cancel</button>
+                                        <button type="submit" className="btn-primary" disabled={savingFan}>
+                                            {savingFan ? <Loader2 size={16} className="animate-spin" /> : (editingFanId ? 'Update Association' : 'Create Association & President')}
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        )}
+
+                        {/* Fan Associations List */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px', marginTop: '16px' }}>
+                            {fanAssociations.length === 0 ? (
+                                <div className="card" style={{ padding: '40px', textAlign: 'center', gridColumn: '1 / -1' }}>
+                                    <Star size={40} style={{ color: 'var(--text-muted)', marginBottom: '12px' }} />
+                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No fan associations yet. Create one above!</p>
+                                </div>
+                            ) : fanAssociations.map((assoc: any) => (
+                                <div key={assoc._id} className="card card-glow" style={{ overflow: 'hidden' }}>
+                                    {/* Banner */}
+                                    <div style={{
+                                        height: '80px',
+                                        background: assoc.bannerImage ? `url(${assoc.bannerImage}) center/cover` : `linear-gradient(135deg, ${assoc.themeColor || 'var(--accent)'}, ${assoc.themeColor || 'var(--accent)'}88)`,
+                                        position: 'relative',
+                                    }}>
+                                        {assoc.heroImage && (
+                                            <img src={assoc.heroImage} alt={assoc.heroName}
+                                                style={{ width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--bg-card)', position: 'absolute', bottom: '-28px', left: '20px' }} />
+                                        )}
+                                    </div>
+                                    <div style={{ padding: '36px 20px 20px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                            <div>
+                                                <h4 style={{ fontWeight: 800, fontSize: '1.05rem' }}>{assoc.heroName} Fans</h4>
+                                                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <MapPin size={12} /> {assoc.areaName}
+                                                </p>
+                                            </div>
+                                            <span className={`badge ${assoc.isActive ? 'badge-success' : 'badge-danger'}`}>
+                                                {assoc.isActive ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </div>
+                                        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                                            President: <strong>{assoc.president?.name || '—'}</strong> ({assoc.president?.email})
+                                        </p>
+                                        {assoc.description && (
+                                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '10px', lineHeight: 1.5 }}>
+                                                {assoc.description.slice(0, 100)}{assoc.description.length > 100 ? '...' : ''}
+                                            </p>
+                                        )}
+                                        <div style={{ display: 'flex', gap: '6px', marginTop: '4px', borderTop: '1px solid var(--border-primary)', paddingTop: '12px' }}>
+                                            <a href={`/fans/${assoc.slug}`} target="_blank" rel="noopener noreferrer">
+                                                <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.75rem' }}>
+                                                    <Eye size={13} /> View Page
+                                                </button>
+                                            </a>
+                                            <button onClick={() => handleEditFanClick(assoc)}
+                                                style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: 'none', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <Edit3 size={13} /> Edit
+                                            </button>
+                                            <button onClick={() => handleDeleteFan(assoc._id)}
+                                                style={{ background: 'var(--danger-soft)', color: 'var(--danger)', border: 'none', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <Trash2 size={13} /> Delete
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             ))}
                         </div>

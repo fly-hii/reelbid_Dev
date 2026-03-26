@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 import BuyerDashboard from './BuyerDashboard';
 import SellerDashboard from './SellerDashboard';
 import AdminDashboard from './AdminDashboard';
+import PresidentDashboard from './PresidentDashboard';
 
 export default function Dashboard() {
     const { data: session, status } = useSession();
@@ -55,6 +56,7 @@ export default function Dashboard() {
     const role = (session?.user as any)?.role || 'Buyer';
 
     if (role === 'Admin') return <AdminDashboard />;
+    if (role === 'President') return <PresidentDashboard />;
     if (role === 'Seller') return <SellerDashboard />;
     return <BuyerDashboard />;
 }
