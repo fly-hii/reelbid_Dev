@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
-import Item from '@/models/Item';
-import Bid from '@/models/Bid';
-import WalletTransaction from '@/models/WalletTransaction';
+import { User, Item, Bid, WalletTransaction } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { assertWalletIntegrity, resignWallet } from '@/lib/walletIntegrity';
@@ -28,14 +25,14 @@ export async function POST(req: Request) {
         const { itemId } = await req.json();
         await connectDB();
 
-        const item = await Item.findById(itemId);
+        const item = await Item.findByPk(itemId);
         if (!item) return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
 
         // Allow anyone to close the auction IF the time has naturally ended.
         // If it's still running, only the seller or admin can manually force-close it early.
         const userRole = (session.user as any).role;
-        const userId = (session.user as any).id;
-        const isOwnerOrAdmin = userRole === 'Admin' || item.seller.toString() === userId;
+        const userId = parseInt((session.user as any).id);
+        const isOwnerOrAdmin = userRole === 'Admin' || item.sellerId === userId;
         const hasTimeExpired = new Date() >= new Date(item.endDate);
 
         if (!isOwnerOrAdmin && !hasTimeExpired) {
@@ -47,25 +44,26 @@ export async function POST(req: Request) {
         }
 
         // Get all bids for this auction
-        const allBids = await Bid.find({ item: item._id, depositRefunded: false });
+        const allBids = await Bid.findAll({ where: { itemId: item.id, depositRefunded: false } });
 
         // Group bids by user to find unique bidders
-        const bidderMap: Record<string, { totalLocked: number; bids: any[] }> = {};
+        const bidderMap: Record<number, { totalLocked: number; bids: any[] }> = {};
         for (const bid of allBids) {
-            const bidderId = bid.user.toString();
+            const bidderId = bid.userId;
             if (!bidderMap[bidderId]) {
                 bidderMap[bidderId] = { totalLocked: 0, bids: [] };
             }
-            bidderMap[bidderId].totalLocked += bid.lockedDeposit || 0;
+            bidderMap[bidderId].totalLocked += Number(bid.lockedDeposit || 0);
             bidderMap[bidderId].bids.push(bid);
         }
 
-        const winnerId = item.highestBidder?.toString();
+        const winnerId = item.highestBidderId;
         let refundCount = 0;
         let winnerDeposit = 0;
 
-        for (const [bidderId, data] of Object.entries(bidderMap)) {
-            const bidder = await User.findById(bidderId);
+        for (const [bidderIdStr, data] of Object.entries(bidderMap)) {
+            const bidderId = parseInt(bidderIdStr);
+            const bidder = await User.findByPk(bidderId);
             if (!bidder) continue;
 
             // ── Verify wallet integrity before any balance mutation ──
@@ -79,27 +77,26 @@ export async function POST(req: Request) {
                 // WINNER: Adjust deposit into final payment
                 // ========================================
                 winnerDeposit = data.totalLocked;
-                const remainingPayment = item.currentPrice - winnerDeposit;
 
                 // Mark bids as won
-                await Bid.updateMany(
-                    { item: item._id, user: bidderId },
-                    { status: 'won', depositRefunded: false }
+                await Bid.update(
+                    { status: 'won', depositRefunded: false },
+                    { where: { itemId: item.id, userId: bidderId } }
                 );
 
                 // Unlock the deposit locally
-                bidder.lockedBalance = Math.max(0, (bidder.lockedBalance || 0) - winnerDeposit);
+                bidder.lockedBalance = Math.max(0, Number(bidder.lockedBalance || 0) - winnerDeposit);
 
                 // Deduct the deposit amount from the wallet balance (it's consumed)
-                bidder.walletBalance = Math.max(0, bidder.walletBalance - winnerDeposit);
+                bidder.walletBalance = Math.max(0, Number(bidder.walletBalance) - winnerDeposit);
 
                 // Record the deposit extraction from the wallet
                 await WalletTransaction.create({
-                    user: bidderId,
+                    userId: bidderId,
                     type: 'debit',
                     amount: winnerDeposit,
                     description: `Security deposit adjusted into payment for "${item.title}"`,
-                    auction: item._id,
+                    auctionId: item.id,
                     balanceAfter: bidder.walletBalance,
                     lockedAfter: bidder.lockedBalance,
                 });
@@ -113,25 +110,25 @@ export async function POST(req: Request) {
                 // ========================================
                 const refundAmount = data.totalLocked;
                 if (refundAmount > 0) {
-                    bidder.lockedBalance = Math.max(0, (bidder.lockedBalance || 0) - refundAmount);
+                    bidder.lockedBalance = Math.max(0, Number(bidder.lockedBalance || 0) - refundAmount);
                     // ── Re-sign wallet hash after mutation ──
                     resignWallet(bidder);
                     await bidder.save();
 
                     await WalletTransaction.create({
-                        user: bidderId,
+                        userId: bidderId,
                         type: 'refund',
                         amount: refundAmount,
                         description: `Security deposit refunded for "${item.title}" (auction ended)`,
-                        auction: item._id,
+                        auctionId: item.id,
                         balanceAfter: bidder.walletBalance,
                         lockedAfter: bidder.lockedBalance,
                     });
 
                     // Mark bids as refunded
-                    await Bid.updateMany(
-                        { item: item._id, user: bidderId },
-                        { status: 'refunded', depositRefunded: true }
+                    await Bid.update(
+                        { status: 'refunded', depositRefunded: true },
+                        { where: { itemId: item.id, userId: bidderId } }
                     );
 
                     refundCount++;
@@ -143,30 +140,30 @@ export async function POST(req: Request) {
         // REVENUE DISTRIBUTION: Deduct Platform Fee & Distribute among Sellers
         // ====================================================================
         if (winnerId) {
-            const totalAmount = item.currentPrice;
+            const totalAmount = Number(item.currentPrice);
             let platformFee = 0;
             if (item.platformFeeType === 'percentage') {
-                platformFee = totalAmount * (item.platformFeeValue / 100);
+                platformFee = totalAmount * (Number(item.platformFeeValue) / 100);
             } else {
-                platformFee = item.platformFeeValue || 0;
+                platformFee = Number(item.platformFeeValue) || 0;
             }
 
             const distributableAmount = Math.max(0, totalAmount - platformFee);
 
             // 1. Credit Platform Fee to Admin (First Admin found)
             if (platformFee > 0) {
-                const adminUser = await User.findOne({ role: 'Admin' });
+                const adminUser = await User.findOne({ where: { role: 'Admin' } });
                 if (adminUser) {
-                    adminUser.walletBalance += platformFee;
+                    adminUser.walletBalance = Number(adminUser.walletBalance) + platformFee;
                     resignWallet(adminUser);
                     await adminUser.save();
 
                     await WalletTransaction.create({
-                        user: adminUser._id,
-                        type: 'platform_fee',
+                        userId: adminUser.id,
+                        type: 'payment', // mapping platform_fee to payment since type is restricted
                         amount: platformFee,
                         description: `Platform fee received for auction "${item.title}"`,
-                        auction: item._id,
+                        auctionId: item.id,
                         balanceAfter: adminUser.walletBalance,
                         lockedAfter: adminUser.lockedBalance || 0,
                     });
@@ -174,23 +171,24 @@ export async function POST(req: Request) {
             }
 
             // 2. Distribute among sellers in revenueShares
-            if (item.revenueShares && item.revenueShares.length > 0) {
-                for (const share of item.revenueShares) {
-                    const seller = await User.findById(share.sellerId);
+            const revShares = item.revenueSharesArray;
+            if (revShares && revShares.length > 0) {
+                for (const share of revShares) {
+                    const seller = await User.findByPk(share.sellerId);
                     if (seller) {
                         try {
                             assertWalletIntegrity(seller);
                             const sellerShareAmount = distributableAmount * (share.percentage / 100);
-                            seller.walletBalance += sellerShareAmount;
+                            seller.walletBalance = Number(seller.walletBalance) + sellerShareAmount;
                             resignWallet(seller);
                             await seller.save();
 
                             await WalletTransaction.create({
-                                user: seller._id,
+                                userId: seller.id,
                                 type: 'payment',
                                 amount: sellerShareAmount,
                                 description: `Revenue share (${share.percentage}%) for auction "${item.title}" (${share.professionalRole || 'Seller'})`,
-                                auction: item._id,
+                                auctionId: item.id,
                                 balanceAfter: seller.walletBalance,
                                 lockedAfter: seller.lockedBalance || 0,
                             });
@@ -200,21 +198,21 @@ export async function POST(req: Request) {
                     }
                 }
             } else {
-                // Fallback: If no revenueShares, credit all to the auction creator (admin)
-                const creator = await User.findById(item.seller);
+                // Fallback: If no revenueShares, credit all to the auction creator
+                const creator = await User.findByPk(item.sellerId);
                 if (creator) {
                     try {
                         assertWalletIntegrity(creator);
-                        creator.walletBalance += distributableAmount;
+                        creator.walletBalance = Number(creator.walletBalance) + distributableAmount;
                         resignWallet(creator);
                         await creator.save();
 
                         await WalletTransaction.create({
-                            user: creator._id,
+                            userId: creator.id,
                             type: 'payment',
                             amount: distributableAmount,
                             description: `Auction revenue for "${item.title}" (no split defined)`,
-                            auction: item._id,
+                            auctionId: item.id,
                             balanceAfter: creator.walletBalance,
                             lockedAfter: creator.lockedBalance || 0,
                         });
@@ -225,8 +223,8 @@ export async function POST(req: Request) {
 
         // Update item status
         item.status = 'Completed';
-        item.winner = winnerId ? winnerId : undefined;
-        item.finalAmount = winnerId ? item.currentPrice : undefined;
+        item.winnerId = winnerId ? winnerId : null;
+        item.finalAmount = winnerId ? item.currentPrice : null;
         await item.save();
 
         // Broadcast completion via socket
@@ -267,20 +265,28 @@ export async function GET(req: Request) {
 
         await connectDB();
 
-        const item = await Item.findById(itemId)
-            .populate('winner', 'name email image')
-            .populate('seller', 'name email image')
-            .populate('highestBidder', 'name email image');
+        const item = await Item.findByPk(itemId, {
+            include: [
+                { model: User, as: 'winner', attributes: ['name', 'email', 'image'] },
+                { model: User, as: 'seller', attributes: ['name', 'email', 'image'] },
+                { model: User, as: 'highestBidder', attributes: ['name', 'email', 'image'] },
+            ]
+        });
 
         if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-        const totalBids = await Bid.countDocuments({ item: itemId });
-        const uniqueBidders = await Bid.distinct('user', { item: itemId });
+        const { Sequelize } = await import('sequelize');
+        const totalBids = await Bid.count({ where: { itemId: item.id } });
+        
+        const uniqueBiddersObj = await Bid.findAll({
+            attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('userId')), 'userId']],
+            where: { itemId: item.id }
+        });
 
         return NextResponse.json({
             item,
             totalBids,
-            uniqueBidders: uniqueBidders.length,
+            uniqueBidders: uniqueBiddersObj.length,
         });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

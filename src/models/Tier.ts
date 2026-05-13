@@ -1,13 +1,65 @@
-import mongoose from 'mongoose';
+import { DataTypes, Model, Optional } from 'sequelize';
+import { getSequelize } from '@/lib/mysql';
 
-const TierSchema = new mongoose.Schema(
-    {
-        name: { type: String, required: true, unique: true },      // e.g. "Tier A"
-        minBalance: { type: Number, required: true },               // Minimum wallet balance to qualify
-        bidLimit: { type: Number, required: true },                  // Maximum bid amount allowed
-        order: { type: Number, required: true, default: 0 },        // Sort order (higher = better tier)
-    },
-    { timestamps: true }
-);
+export interface TierAttributes {
+    id: number;
+    name: string;
+    minBalance: number;
+    bidLimit: number;
+    order: number;
+    createdAt?: Date;
+    updatedAt?: Date;
+}
 
-export default mongoose.models.Tier || mongoose.model('Tier', TierSchema);
+export interface TierCreationAttributes extends Optional<TierAttributes, 'id' | 'order'> {}
+
+export class Tier extends Model<TierAttributes, TierCreationAttributes> implements TierAttributes {
+    declare id: number;
+    declare name: string;
+    declare minBalance: number;
+    declare bidLimit: number;
+    declare order: number;
+    declare readonly createdAt: Date;
+    declare readonly updatedAt: Date;
+}
+
+export function initTierModel() {
+    const sequelize = getSequelize();
+
+    Tier.init(
+        {
+            id: {
+                type: DataTypes.INTEGER.UNSIGNED,
+                autoIncrement: true,
+                primaryKey: true,
+            },
+            name: {
+                type: DataTypes.STRING(100),
+                allowNull: false,
+                unique: true,
+            },
+            minBalance: {
+                type: DataTypes.DECIMAL(12, 2),
+                allowNull: false,
+            },
+            bidLimit: {
+                type: DataTypes.DECIMAL(12, 2),
+                allowNull: false,
+            },
+            order: {
+                type: DataTypes.INTEGER,
+                allowNull: false,
+                defaultValue: 0,
+            },
+        },
+        {
+            sequelize,
+            tableName: 'tiers',
+            timestamps: true,
+        }
+    );
+
+    return Tier;
+}
+
+export default Tier;

@@ -156,14 +156,7 @@ export default function PresidentDashboard() {
                         : `linear-gradient(135deg, ${association.themeColor || 'var(--accent)'}, ${association.themeColor || 'var(--accent)'}88)`,
                     position: 'relative',
                 }}>
-                    {association.heroImage && (
-                        <img src={association.heroImage} alt={association.heroName}
-                            style={{
-                                width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover',
-                                border: '4px solid var(--bg-card)', position: 'absolute', bottom: '-40px', left: '32px',
-                                boxShadow: 'var(--shadow-floating)',
-                            }} />
-                    )}
+                    {/* Hero Image Removed */}
                 </div>
                 <div style={{ padding: '48px 32px 24px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -173,6 +166,9 @@ export default function PresidentDashboard() {
                             </h1>
                             <p style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}>
                                 <MapPin size={14} /> {association.areaName}
+                                {association.town && `, ${association.town}`}
+                                {association.district && `, ${association.district}`}
+                                {association.state && `, ${association.state}`}
                             </p>
                         </div>
                         <div style={{ display: 'flex', gap: '10px' }}>
@@ -272,12 +268,19 @@ export default function PresidentDashboard() {
                             </div>
                             <div>
                                 <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Photo</label>
-                                <input type="file" accept="image/*" className="input-field" onChange={(e) => {
+                                <input type="file" accept="image/*" className="input-field" onChange={async (e) => {
                                     const file = e.target.files?.[0];
                                     if (file) {
-                                        const reader = new FileReader();
-                                        reader.onloadend = () => setMemberPhoto(reader.result as string);
-                                        reader.readAsDataURL(file);
+                                        const formData = new FormData();
+                                        formData.append('file', file);
+                                        try {
+                                            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                                            const data = await res.json();
+                                            if (!res.ok) throw new Error(data.error);
+                                            setMemberPhoto(data.url);
+                                        } catch (err: any) {
+                                            toast.error('Upload failed: ' + err.message);
+                                        }
                                     }
                                 }} />
                                 {memberPhoto && <img src={memberPhoto} alt="preview" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', marginTop: '6px' }} />}

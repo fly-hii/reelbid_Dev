@@ -41,20 +41,17 @@ export async function PUT(req: Request) {
         }
 
         await connectDB();
-        const user = await User.findByIdAndUpdate(
-            (session.user as any).id,
-            {
-                name,
-                phone: cleanPhone,
-                address,
-                city,
-                state,
-                pincode: cleanPin,
-            },
-            { new: true }
-        );
-
+        const user = await User.findByPk((session.user as any).id);
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+
+        await user.update({
+            name,
+            phone: cleanPhone,
+            address,
+            city,
+            state,
+            pincode: cleanPin,
+        });
 
         return NextResponse.json({
             success: true,

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import Tier from '@/models/Tier';
-import User from '@/models/User';
+import { Tier, User } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -10,7 +9,7 @@ async function checkAdmin() {
     const session = await getServerSession(authOptions);
     if (!session?.user) return null;
     await connectDB();
-    const user = await User.findById((session.user as any).id);
+    const user = await User.findByPk((session.user as any).id);
     if (!user || user.role !== 'Admin') return null;
     return user;
 }
@@ -21,8 +20,9 @@ export async function GET() {
         const admin = await checkAdmin();
         if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
 
-        const tiers = await Tier.find().sort({ order: 1 });
-        return NextResponse.json(tiers);
+        const tiers = await Tier.findAll({ order: [['order', 'ASC']] });
+        const result = tiers.map(t => ({ ...t.toJSON(), _id: t.id }));
+        return NextResponse.json(result);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -40,7 +40,8 @@ export async function POST(req: Request) {
         }
 
         const tier = await Tier.create({ name, minBalance, bidLimit, order: order || 0 });
-        return NextResponse.json({ success: true, tier });
+        const plain = { ...tier.toJSON(), _id: tier.id };
+        return NextResponse.json({ success: true, tier: plain });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -55,14 +56,13 @@ export async function PUT(req: Request) {
         const { tierId, name, minBalance, bidLimit, order } = await req.json();
         if (!tierId) return NextResponse.json({ error: 'tierId is required' }, { status: 400 });
 
-        const tier = await Tier.findByIdAndUpdate(
-            tierId,
-            { name, minBalance, bidLimit, order },
-            { new: true }
-        );
+        const tier = await Tier.findByPk(tierId);
         if (!tier) return NextResponse.json({ error: 'Tier not found' }, { status: 404 });
 
-        return NextResponse.json({ success: true, tier });
+        await tier.update({ name, minBalance, bidLimit, order });
+        const plain = { ...tier.toJSON(), _id: tier.id };
+
+        return NextResponse.json({ success: true, tier: plain });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -78,7 +78,11 @@ export async function DELETE(req: Request) {
         const tierId = searchParams.get('tierId');
         if (!tierId) return NextResponse.json({ error: 'tierId is required' }, { status: 400 });
 
-        await Tier.findByIdAndDelete(tierId);
+        const tier = await Tier.findByPk(tierId);
+        if (tier) {
+            await tier.destroy();
+        }
+
         return NextResponse.json({ success: true });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

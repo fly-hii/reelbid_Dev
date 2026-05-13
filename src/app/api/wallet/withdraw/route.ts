@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
-import WithdrawRequest from '@/models/WithdrawRequest';
-import WalletTransaction from '@/models/WalletTransaction';
+import { User, WithdrawRequest, WalletTransaction } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { assertWalletIntegrity, resignWallet } from '@/lib/walletIntegrity';
@@ -17,7 +15,10 @@ export async function GET(req: Request) {
         const userId = (session.user as any).id;
         await connectDB();
 
-        const requests = await WithdrawRequest.find({ user: userId }).sort({ createdAt: -1 });
+        const requests = await WithdrawRequest.findAll({
+            where: { userId },
+            order: [['createdAt', 'DESC']]
+        });
         return NextResponse.json(requests);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
@@ -60,21 +61,21 @@ export async function POST(req: Request) {
 
         await connectDB();
 
-        const user = await User.findById(userId);
+        const user = await User.findByPk(userId);
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
         // ── Verify wallet integrity BEFORE mutation ──
         assertWalletIntegrity(user);
 
         // ── Balance check from DB (NEVER trust client-side balance) ──
-        const dbAvailableBalance = user.walletBalance - (user.lockedBalance || 0);
+        const dbAvailableBalance = Number(user.walletBalance) - Number(user.lockedBalance || 0);
 
         if (sanitizedAmount > dbAvailableBalance) {
             return NextResponse.json({ error: 'Insufficient available balance' }, { status: 400 });
         }
 
         // Deduct from wallet right away to prevent double withdrawal
-        user.walletBalance -= sanitizedAmount;
+        user.walletBalance = Number(user.walletBalance) - sanitizedAmount;
 
         // ── Re-sign wallet hash after mutation ──
         resignWallet(user);
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
 
         // Create the withdraw request with sanitized values
         const withdrawal = await WithdrawRequest.create({
-            user: userId,
+            userId: user.id,
             amount: sanitizedAmount,
             bankName: bankName.trim(),
             accountName: accountName.trim(),
@@ -93,10 +94,10 @@ export async function POST(req: Request) {
 
         // Record via Wallet Transaction
         await WalletTransaction.create({
-            user: userId,
+            userId: user.id,
             type: 'debit',
             amount: sanitizedAmount,
-            description: `Withdrawal request initiated (#${withdrawal._id.toString().substring(0, 8)})`,
+            description: `Withdrawal request initiated (#${withdrawal.id})`,
             balanceAfter: user.walletBalance,
             lockedAfter: user.lockedBalance || 0,
         });

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import Item from '@/models/Item';
+import { Item, User } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -20,19 +20,19 @@ export async function POST(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const userId = (session.user as any).id;
+        const userId = parseInt((session.user as any).id);
         const role = (session.user as any).role;
 
         await connectDB();
 
-        const item = await Item.findById(id).populate('seller', 'name email');
+        const item = await Item.findByPk(id, { include: [{ model: User, as: 'seller', attributes: ['id', 'name', 'email'] }] });
 
         if (!item) {
             return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
         }
 
         // Only seller or admin can mark payment
-        if (role !== 'Admin' && item.seller._id.toString() !== userId) {
+        if (role !== 'Admin' && item.sellerId !== userId) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 

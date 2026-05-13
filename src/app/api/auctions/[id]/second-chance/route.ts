@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import Item from '@/models/Item';
-import Bid from '@/models/Bid';
-import User from '@/models/User';
+import { Item, Bid, User } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -24,41 +22,43 @@ export async function GET(
         const userId = (session.user as any).id;
         await connectDB();
 
-        const item = await Item.findById(id).lean();
+        const item = await Item.findByPk(id);
         if (!item) {
             return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
         }
 
         // Check if user has a bid on this auction
-        const userBid = await Bid.findOne({ item: (item as any)._id, user: userId })
-            .sort({ amount: -1 });
+        const userBid = await Bid.findOne({ 
+            where: { itemId: item.id, userId },
+            order: [['amount', 'DESC']]
+        });
 
         if (!userBid) {
             return NextResponse.json({ error: 'You did not bid on this auction' }, { status: 400 });
         }
 
         // Check if second-chance is open
-        const isOpen = (item as any).secondChanceStatus === 'open';
+        const isOpen = item.secondChanceStatus === 'open';
 
         // Check if user is the winner (winners don't get second chance)
-        const isWinner = (item as any).winner?.toString() === userId;
+        const isWinner = item.winnerId?.toString() === userId.toString();
 
         // Check if user already submitted a second-chance offer
-        const existingOffer = (item as any).secondChanceOffers?.find(
-            (o: any) => o.userId?.toString() === userId
+        const existingOffer = item.secondChanceOffersArray.find(
+            (o: any) => o.userId?.toString() === userId.toString()
         );
 
-        const winningAmount = (item as any).finalAmount || (item as any).currentPrice;
+        const winningAmount = Number(item.finalAmount) || Number(item.currentPrice);
 
         return NextResponse.json({
             isOpen,
             isWinner,
             winningAmount,
-            userBidAmount: userBid.amount,
+            userBidAmount: Number(userBid.amount),
             minPrice: Math.round(winningAmount * 0.95),
             maxPrice: Math.round(winningAmount * 1.05),
             existingOffer: existingOffer || null,
-            auctionTitle: (item as any).title,
+            auctionTitle: item.title,
         });
     } catch (error: any) {
         console.error('Second chance GET error:', error);
@@ -82,10 +82,10 @@ export async function POST(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const userId = (session.user as any).id;
+        const userId = parseInt((session.user as any).id);
         await connectDB();
 
-        const item = await Item.findById(id);
+        const item = await Item.findByPk(id);
         if (!item) {
             return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
         }
@@ -95,19 +95,25 @@ export async function POST(
         }
 
         // Check user is not the winner
-        if (item.winner?.toString() === userId) {
+        if (item.winnerId === userId) {
             return NextResponse.json({ error: 'Winners cannot submit second-chance offers' }, { status: 400 });
         }
 
         // Check user has a bid
-        const userBid = await Bid.findOne({ item: item._id, user: userId }).sort({ amount: -1 });
+        const userBid = await Bid.findOne({ 
+            where: { itemId: item.id, userId },
+            order: [['amount', 'DESC']]
+        });
+        
         if (!userBid) {
             return NextResponse.json({ error: 'You did not bid on this auction' }, { status: 400 });
         }
 
+        const offers = item.secondChanceOffersArray;
+
         // Check if already submitted
-        const alreadySubmitted = item.secondChanceOffers?.some(
-            (o: any) => o.userId?.toString() === userId
+        const alreadySubmitted = offers.some(
+            (o: any) => parseInt(o.userId) === userId
         );
         if (alreadySubmitted) {
             return NextResponse.json({ error: 'You have already submitted a second-chance offer' }, { status: 400 });
@@ -119,26 +125,24 @@ export async function POST(
             return NextResponse.json({ error: 'Adjustment must be between -5% and +5%' }, { status: 400 });
         }
 
-        const winningAmount = item.finalAmount || item.currentPrice;
+        const winningAmount = Number(item.finalAmount) || Number(item.currentPrice);
         const offerPrice = Math.round(winningAmount * (1 + adjustment / 100));
 
-        const user = await User.findById(userId).select('name email');
+        const user = await User.findByPk(userId, { attributes: ['name', 'email'] });
 
         const offerRecord = {
             userId,
             userName: user?.name || 'Unknown',
             userEmail: user?.email || '',
-            originalBid: userBid.amount,
+            originalBid: Number(userBid.amount),
             offerPrice,
             percentageAdjustment: adjustment,
             sentAt: new Date(),
             status: 'pending', // buyer submitted, waiting for seller approval
         };
 
-        if (!item.secondChanceOffers) {
-            item.secondChanceOffers = [];
-        }
-        item.secondChanceOffers.push(offerRecord);
+        offers.push(offerRecord);
+        item.secondChanceOffers = JSON.stringify(offers);
         await item.save();
 
         return NextResponse.json({

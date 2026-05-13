@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import FanMember from '@/models/FanMember';
-import FanAssociation from '@/models/FanAssociation';
+import { FanMember, FanAssociation } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -24,14 +23,14 @@ export async function POST(req: Request) {
 
         // If president, verify they own this association
         if ((session.user as any).role === 'President') {
-            const association = await FanAssociation.findById(associationId);
-            if (!association || association.president.toString() !== (session.user as any).id) {
+            const association = await FanAssociation.findByPk(associationId);
+            if (!association || association.presidentId.toString() !== (session.user as any).id) {
                 return NextResponse.json({ error: 'You can only add members to your own association' }, { status: 403 });
             }
         }
 
         const member = await FanMember.create({
-            association: associationId,
+            associationId,
             title,
             name,
             designation,
@@ -40,7 +39,10 @@ export async function POST(req: Request) {
             order: order || 0,
         });
 
-        return NextResponse.json({ success: true, member });
+        const plain = member.toJSON() as any;
+        plain._id = plain.id;
+
+        return NextResponse.json({ success: true, member: plain });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -58,10 +60,18 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Association ID required' }, { status: 400 });
         }
 
-        const members = await FanMember.find({ association: associationId })
-            .sort({ order: 1, createdAt: 1 });
+        const members = await FanMember.findAll({
+            where: { associationId },
+            order: [['order', 'ASC'], ['createdAt', 'ASC']]
+        });
 
-        return NextResponse.json({ success: true, members });
+        const result = members.map(m => {
+            const plain = m.toJSON() as any;
+            plain._id = plain.id;
+            return plain;
+        });
+
+        return NextResponse.json({ success: true, members: result });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -92,12 +102,17 @@ export async function PUT(req: Request) {
         if (photo !== undefined) updateData.photo = photo;
         if (order !== undefined) updateData.order = order;
 
-        const member = await FanMember.findByIdAndUpdate(memberId, updateData, { new: true });
+        const member = await FanMember.findByPk(memberId);
         if (!member) {
             return NextResponse.json({ error: 'Member not found' }, { status: 404 });
         }
 
-        return NextResponse.json({ success: true, member });
+        await member.update(updateData);
+        
+        const plain = member.toJSON() as any;
+        plain._id = plain.id;
+
+        return NextResponse.json({ success: true, member: plain });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -119,10 +134,11 @@ export async function DELETE(req: Request) {
         }
 
         await connectDB();
-        const deleted = await FanMember.findByIdAndDelete(memberId);
-        if (!deleted) {
+        const member = await FanMember.findByPk(memberId);
+        if (!member) {
             return NextResponse.json({ error: 'Member not found' }, { status: 404 });
         }
+        await member.destroy();
 
         return NextResponse.json({ success: true });
     } catch (error: any) {

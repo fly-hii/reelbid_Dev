@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
+import { User } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateFields } from '@/lib/profanityFilter';
@@ -16,12 +16,15 @@ export async function GET() {
         }
 
         await connectDB();
-        const user = await User.findById((session.user as any).id).select(
-            'name email phone address city state pincode profileCompleted'
-        );
+        const user = await User.findByPk((session.user as any).id, {
+            attributes: ['id', 'name', 'email', 'phone', 'address', 'city', 'state', 'pincode', 'profileCompleted']
+        });
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-        return NextResponse.json(user);
+        const plain = user.toJSON() as any;
+        plain._id = plain.id;
+        
+        return NextResponse.json(plain);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -61,21 +64,19 @@ export async function POST(req: Request) {
         }
 
         await connectDB();
-        const user = await User.findByIdAndUpdate(
-            (session.user as any).id,
-            {
-                name,
-                phone: cleanPhone,
-                address,
-                city,
-                state,
-                pincode: cleanPin,
-                profileCompleted: true,
-            },
-            { new: true }
-        );
+        const user = await User.findByPk((session.user as any).id);
 
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+
+        await user.update({
+            name,
+            phone: cleanPhone,
+            address,
+            city,
+            state,
+            pincode: cleanPin,
+            profileCompleted: true,
+        });
 
         return NextResponse.json({
             success: true,

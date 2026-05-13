@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import Item from '@/models/Item';
-import Bid from '@/models/Bid';
+import { Item, Bid, User } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -18,24 +17,32 @@ export async function GET() {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        const sellerId = (session.user as any).id;
+        const sellerId = parseInt((session.user as any).id);
         await connectDB();
 
-        const items = await Item.find({ seller: sellerId })
-            .populate('highestBidder', 'name email phone address city state pincode')
-            .sort({ createdAt: -1 })
-            .lean();
+        const itemsData = await Item.findAll({
+            where: { sellerId },
+            include: [{ model: User, as: 'highestBidder', attributes: ['name', 'email', 'phone', 'address', 'city', 'state', 'pincode'] }],
+            order: [['createdAt', 'DESC']]
+        });
+
+        const items = itemsData.map(i => {
+            const plain = i.toJSON() as any;
+            plain._id = plain.id;
+            return plain;
+        });
 
         const totalListings = items.length;
         const activeListings = items.filter((i: any) => i.status === 'Active' && new Date(i.endDate) > new Date()).length;
         const completedListings = items.filter((i: any) => i.status === 'Completed' || (i.status === 'Active' && new Date(i.endDate) <= new Date())).length;
         const totalEarnings = items
             .filter((i: any) => i.status === 'Completed' || (i.status === 'Active' && new Date(i.endDate) <= new Date()))
-            .reduce((sum: number, i: any) => sum + (i.currentPrice || 0), 0);
+            .reduce((sum: number, i: any) => sum + Number(i.currentPrice || 0), 0);
 
         // Get total bids on seller's items
-        const itemIds = items.map((i: any) => i._id);
-        const totalBidsOnItems = await Bid.countDocuments({ item: { $in: itemIds } });
+        const itemIds = items.map((i: any) => i.id);
+        const { Op } = await import('sequelize');
+        const totalBidsOnItems = await Bid.count({ where: { itemId: { [Op.in]: itemIds } } });
 
         return NextResponse.json({
             stats: { totalListings, activeListings, completedListings, totalEarnings, totalBidsOnItems },

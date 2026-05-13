@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
-import Item from '@/models/Item';
-import Bid from '@/models/Bid';
-import WalletTransaction from '@/models/WalletTransaction';
+import { User, Item, Bid, WalletTransaction } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { fn, col } from 'sequelize';
 
 export async function GET() {
     try {
@@ -17,44 +15,58 @@ export async function GET() {
         await connectDB();
 
         const [totalUsers, totalItems, totalBids, totalTransactions, users, items] = await Promise.all([
-            User.countDocuments(),
-            Item.countDocuments(),
-            Bid.countDocuments(),
-            WalletTransaction.countDocuments(),
-            User.find().select('name email role walletBalance lockedBalance tier isApproved createdAt').sort({ createdAt: -1 }).lean(),
-            Item.find()
-                .populate('seller', 'name email')
-                .populate('highestBidder', 'name email')
-                .populate('winner', 'name email')
-                .sort({ createdAt: -1 })
-                .lean(),
+            User.count(),
+            Item.count(),
+            Bid.count(),
+            WalletTransaction.count(),
+            User.findAll({
+                attributes: ['id', 'name', 'email', 'role', 'walletBalance', 'lockedBalance', 'tier', 'isApproved', 'createdAt'],
+                order: [['createdAt', 'DESC']],
+                raw: true,
+            }),
+            Item.findAll({
+                include: [
+                    { model: User, as: 'seller', attributes: ['id', 'name', 'email'] },
+                    { model: User, as: 'highestBidder', attributes: ['id', 'name', 'email'] },
+                    { model: User, as: 'winner', attributes: ['id', 'name', 'email'] },
+                ],
+                order: [['createdAt', 'DESC']],
+            }),
         ]);
+
+        const itemsRaw = items.map(i => {
+            const plain = i.toJSON() as any;
+            plain._id = plain.id;
+            return plain;
+        });
+
+        const usersRaw = users.map((u: any) => ({ ...u, _id: u.id }));
 
         // Compute wallet flow stats
-        const walletStats = await WalletTransaction.aggregate([
-            {
-                $group: {
-                    _id: '$type',
-                    total: { $sum: '$amount' },
-                    count: { $sum: 1 },
-                },
-            },
-        ]);
+        const walletStats = await WalletTransaction.findAll({
+            attributes: [
+                'type',
+                [fn('SUM', col('amount')), 'total'],
+                [fn('COUNT', col('id')), 'count']
+            ],
+            group: ['type'],
+            raw: true,
+        });
 
         const walletFlow: any = {};
-        for (const s of walletStats) {
-            walletFlow[s._id] = { total: s.total, count: s.count };
+        for (const s of walletStats as any) {
+            walletFlow[s.type] = { total: Number(s.total) || 0, count: Number(s.count) || 0 };
         }
 
-        const buyers = users.filter((u: any) => u.role === 'Buyer').length;
-        const sellers = users.filter((u: any) => u.role === 'Seller').length;
-        const admins = users.filter((u: any) => u.role === 'Admin').length;
-        const activeAuctions = items.filter((i: any) => i.status === 'Active' && new Date(i.endDate) > new Date()).length;
-        const completedAuctions = items.filter((i: any) => i.status === 'Completed' || (i.status === 'Active' && new Date(i.endDate) <= new Date())).length;
-        const totalRevenue = items
+        const buyers = usersRaw.filter((u: any) => u.role === 'Buyer').length;
+        const sellers = usersRaw.filter((u: any) => u.role === 'Seller').length;
+        const admins = usersRaw.filter((u: any) => u.role === 'Admin').length;
+        const activeAuctions = itemsRaw.filter((i: any) => i.status === 'Active' && new Date(i.endDate) > new Date()).length;
+        const completedAuctions = itemsRaw.filter((i: any) => i.status === 'Completed' || (i.status === 'Active' && new Date(i.endDate) <= new Date())).length;
+        const totalRevenue = itemsRaw
             .filter((i: any) => i.status === 'Completed')
-            .reduce((sum: number, i: any) => sum + (i.finalAmount || i.currentPrice || 0), 0);
-        const totalLockedDeposits = users.reduce((sum: number, u: any) => sum + (u.lockedBalance || 0), 0);
+            .reduce((sum: number, i: any) => sum + Number(i.finalAmount || i.currentPrice || 0), 0);
+        const totalLockedDeposits = usersRaw.reduce((sum: number, u: any) => sum + Number(u.lockedBalance || 0), 0);
 
         return NextResponse.json({
             stats: {
@@ -64,8 +76,8 @@ export async function GET() {
                 totalRevenue, totalLockedDeposits,
                 walletFlow,
             },
-            users,
-            items,
+            users: usersRaw,
+            items: itemsRaw,
         });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

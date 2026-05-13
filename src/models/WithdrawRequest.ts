@@ -1,33 +1,50 @@
-import mongoose, { Document, Model, Schema } from 'mongoose';
+import { DataTypes, Model, Optional } from 'sequelize';
+import { getSequelize } from '@/lib/mysql';
 
-export interface IWithdrawRequest extends Document {
-    user: mongoose.Types.ObjectId;
+export interface WithdrawRequestAttributes {
+    id: number;
+    userId: number;
     amount: number;
     bankName: string;
     accountName: string;
     accountNumber: string;
     ifscCode: string;
     status: 'pending' | 'approved' | 'rejected';
-    adminNotes?: string;
-    createdAt: Date;
-    updatedAt: Date;
+    adminNotes: string | null;
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
-const WithdrawRequestSchema = new Schema<IWithdrawRequest>(
-    {
-        user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-        amount: { type: Number, required: true },
-        bankName: { type: String, required: true },
-        accountName: { type: String, required: true },
-        accountNumber: { type: String, required: true },
-        ifscCode: { type: String, required: true },
-        status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
-        adminNotes: { type: String },
-    },
-    { timestamps: true }
-);
+export interface WithdrawRequestCreationAttributes extends Optional<WithdrawRequestAttributes, 'id' | 'status' | 'adminNotes'> {}
 
-const WithdrawRequest: Model<IWithdrawRequest> =
-    mongoose.models.WithdrawRequest || mongoose.model<IWithdrawRequest>('WithdrawRequest', WithdrawRequestSchema);
+export class WithdrawRequest extends Model<WithdrawRequestAttributes, WithdrawRequestCreationAttributes> implements WithdrawRequestAttributes {
+    declare id: number;
+    declare userId: number;
+    declare amount: number;
+    declare bankName: string;
+    declare accountName: string;
+    declare accountNumber: string;
+    declare ifscCode: string;
+    declare status: 'pending' | 'approved' | 'rejected';
+    declare adminNotes: string | null;
+    declare readonly createdAt: Date;
+    declare readonly updatedAt: Date;
+}
+
+export function initWithdrawRequestModel() {
+    const sequelize = getSequelize();
+    WithdrawRequest.init({
+        id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+        userId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, references: { model: 'users', key: 'id' } },
+        amount: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
+        bankName: { type: DataTypes.STRING(255), allowNull: false },
+        accountName: { type: DataTypes.STRING(255), allowNull: false },
+        accountNumber: { type: DataTypes.STRING(50), allowNull: false },
+        ifscCode: { type: DataTypes.STRING(20), allowNull: false },
+        status: { type: DataTypes.ENUM('pending', 'approved', 'rejected'), allowNull: false, defaultValue: 'pending' },
+        adminNotes: { type: DataTypes.TEXT, allowNull: true },
+    }, { sequelize, tableName: 'withdraw_requests', timestamps: true });
+    return WithdrawRequest;
+}
 
 export default WithdrawRequest;

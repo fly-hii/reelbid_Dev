@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import Item from '@/models/Item';
-import User from '@/models/User';
+import { Item, User } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import nodemailer from 'nodemailer';
@@ -30,33 +29,31 @@ export async function POST(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const userId = (session.user as any).id;
+        const userId = parseInt((session.user as any).id);
         const role = (session.user as any).role;
 
         await connectDB();
 
-        const item = await Item.findById(id)
-            .populate('winner', 'name email')
-            .populate('seller', 'name email');
+        const item = await Item.findByPk(id, { include: [{ model: User, as: 'winner' }, { model: User, as: 'seller' }] });
 
         if (!item) {
             return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
         }
 
-        if (role !== 'Admin' && item.seller._id.toString() !== userId) {
+        if (role !== 'Admin' && item.sellerId !== userId) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        if (!item.winner) {
+        if (!item.winnerId) {
             return NextResponse.json({ error: 'No winner for this auction' }, { status: 400 });
         }
 
-        const winner = await User.findById(item.winner._id);
+        const winner = await User.findByPk(item.winnerId);
         if (!winner || !winner.email) {
             return NextResponse.json({ error: 'Winner email not found' }, { status: 400 });
         }
 
-        const finalAmount = item.finalAmount || item.currentPrice;
+        const finalAmount = Number(item.finalAmount) || Number(item.currentPrice);
 
         await transporter.sendMail({
             from: `"ReelBid" <${process.env.EMAIL_FROM || 'noreply@reelbid.com'}>`,

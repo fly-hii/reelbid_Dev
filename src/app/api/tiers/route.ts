@@ -13,11 +13,11 @@ export async function GET() {
     try {
         await connectDB();
 
-        let tiers = await Tier.find().sort({ order: 1 });
+        let tiers = await Tier.findAll({ order: [['order', 'ASC']] });
 
         // Seed defaults if empty
         if (tiers.length === 0) {
-            tiers = await Tier.insertMany(DEFAULT_TIERS);
+            tiers = await Tier.bulkCreate(DEFAULT_TIERS);
         }
 
         return NextResponse.json(tiers);

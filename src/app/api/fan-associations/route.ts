@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
-import FanAssociation from '@/models/FanAssociation';
+import { User, FanAssociation } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
@@ -22,7 +21,7 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        const { presidentName, presidentEmail, presidentPassword, presidentPhone, heroName, areaName, heroImage, bannerImage, description, themeColor } = body;
+        const { presidentName, presidentEmail, presidentPassword, presidentPhone, heroName, areaName, state, district, town, heroImage, bannerImage, description, themeColor } = body;
 
         if (!presidentName || !presidentEmail || !presidentPassword || !heroName || !areaName) {
             return NextResponse.json({ error: 'President name, email, password, hero name, and area name are required' }, { status: 400 });
@@ -31,14 +30,14 @@ export async function POST(req: Request) {
         await connectDB();
 
         // Check if email already exists
-        const existing = await User.findOne({ email: presidentEmail });
+        const existing = await User.findOne({ where: { email: presidentEmail } });
         if (existing) {
             return NextResponse.json({ error: 'Email already in use' }, { status: 400 });
         }
 
         // Create slug
         let slug = generateSlug(heroName, areaName);
-        const existingSlug = await FanAssociation.findOne({ slug });
+        const existingSlug = await FanAssociation.findOne({ where: { slug } });
         if (existingSlug) {
             slug = slug + '-' + Date.now();
         }
@@ -58,15 +57,22 @@ export async function POST(req: Request) {
         const fanAssociation = await FanAssociation.create({
             heroName,
             areaName,
+            state: state || '',
+            district: district || '',
+            town: town || '',
             slug,
-            president: president._id,
+            presidentId: president.id,
             heroImage: heroImage || '',
             bannerImage: bannerImage || '',
             description: description || '',
             themeColor: themeColor || '#8b5cf6',
+            isActive: true,
         });
 
-        return NextResponse.json({ success: true, fanAssociation, president });
+        const assocPlain = fanAssociation.toJSON() as any;
+        assocPlain._id = assocPlain.id;
+
+        return NextResponse.json({ success: true, fanAssociation: assocPlain, president: { ...president.toJSON(), _id: president.id } });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -80,16 +86,24 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url);
         const presidentId = searchParams.get('presidentId');
 
-        let query: any = {};
+        let where: any = {};
         if (presidentId) {
-            query.president = presidentId;
+            where.presidentId = presidentId;
         }
 
-        const associations = await FanAssociation.find(query)
-            .populate('president', 'name email phone')
-            .sort({ createdAt: -1 });
+        const associations = await FanAssociation.findAll({
+            where,
+            include: [{ model: User, as: 'president', attributes: ['name', 'email', 'phone'] }],
+            order: [['createdAt', 'DESC']]
+        });
 
-        return NextResponse.json({ success: true, associations });
+        const result = associations.map(a => {
+            const plain = a.toJSON() as any;
+            plain._id = plain.id;
+            return plain;
+        });
+
+        return NextResponse.json({ success: true, associations: result });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -104,7 +118,7 @@ export async function PUT(req: Request) {
         }
 
         const body = await req.json();
-        const { associationId, heroImage, bannerImage, galleryImages, description, contactPhone, contactEmail, socialLinks, themeColor, isActive } = body;
+        const { associationId, heroImage, bannerImage, galleryImages, description, contactPhone, contactEmail, socialLinks, themeColor, isActive, state, district, town } = body;
 
         if (!associationId) {
             return NextResponse.json({ error: 'Association ID required' }, { status: 400 });
@@ -115,22 +129,33 @@ export async function PUT(req: Request) {
         const updateData: any = {};
         if (heroImage !== undefined) updateData.heroImage = heroImage;
         if (bannerImage !== undefined) updateData.bannerImage = bannerImage;
-        if (galleryImages !== undefined) updateData.galleryImages = galleryImages;
+        if (galleryImages !== undefined) updateData.galleryImages = JSON.stringify(galleryImages);
         if (description !== undefined) updateData.description = description;
         if (contactPhone !== undefined) updateData.contactPhone = contactPhone;
         if (contactEmail !== undefined) updateData.contactEmail = contactEmail;
-        if (socialLinks !== undefined) updateData.socialLinks = socialLinks;
+        if (socialLinks !== undefined) updateData.socialLinks = JSON.stringify(socialLinks);
         if (themeColor !== undefined) updateData.themeColor = themeColor;
         if (isActive !== undefined) updateData.isActive = isActive;
+        if (state !== undefined) updateData.state = state;
+        if (district !== undefined) updateData.district = district;
+        if (town !== undefined) updateData.town = town;
 
-        const association = await FanAssociation.findByIdAndUpdate(associationId, updateData, { new: true })
-            .populate('president', 'name email phone');
+        const association = await FanAssociation.findByPk(associationId);
 
         if (!association) {
             return NextResponse.json({ error: 'Association not found' }, { status: 404 });
         }
 
-        return NextResponse.json({ success: true, association });
+        await association.update(updateData);
+        
+        const updatedAssoc = await FanAssociation.findByPk(associationId, {
+            include: [{ model: User, as: 'president', attributes: ['name', 'email', 'phone'] }]
+        });
+
+        const plain = updatedAssoc!.toJSON() as any;
+        plain._id = plain.id;
+
+        return NextResponse.json({ success: true, association: plain });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -152,10 +177,11 @@ export async function DELETE(req: Request) {
         }
 
         await connectDB();
-        const deleted = await FanAssociation.findByIdAndDelete(associationId);
-        if (!deleted) {
+        const association = await FanAssociation.findByPk(associationId);
+        if (!association) {
             return NextResponse.json({ error: 'Association not found' }, { status: 404 });
         }
+        await association.destroy();
 
         return NextResponse.json({ success: true });
     } catch (error: any) {

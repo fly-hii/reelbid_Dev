@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import Item from '@/models/Item';
+import { Item } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import crypto from 'crypto';
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const userId = (session.user as any).id;
+        const userId = parseInt((session.user as any).id);
         const {
             razorpay_order_id,
             razorpay_payment_id,
@@ -42,13 +42,13 @@ export async function POST(req: Request) {
 
         await connectDB();
 
-        const item = await Item.findById(auctionId);
+        const item = await Item.findByPk(auctionId);
         if (!item) {
             return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
         }
 
         // Verify user is the winner
-        if (!item.winner || item.winner.toString() !== userId) {
+        if (!item.winnerId || item.winnerId !== userId) {
             return NextResponse.json({ error: 'You are not the winner of this auction' }, { status: 403 });
         }
 

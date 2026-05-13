@@ -59,26 +59,7 @@ export default function FanPageClient({ association, members }: FanPageClientPro
                         padding: '32px',
                         display: 'flex', alignItems: 'flex-end', gap: '24px',
                     }}>
-                        {/* Hero Image */}
-                        {association.heroImage ? (
-                            <img src={association.heroImage} alt={association.heroName}
-                                style={{
-                                    width: '110px', height: '110px', borderRadius: '50%',
-                                    objectFit: 'cover', border: `4px solid ${themeColor}`,
-                                    boxShadow: `0 8px 32px ${themeColor}40`,
-                                    flexShrink: 0,
-                                }} />
-                        ) : (
-                            <div style={{
-                                width: '110px', height: '110px', borderRadius: '50%',
-                                background: `linear-gradient(135deg, ${themeColor}, ${themeColor}88)`,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '2.5rem', fontWeight: 900, color: '#fff',
-                                border: `4px solid ${themeColor}`,
-                                boxShadow: `0 8px 32px ${themeColor}40`,
-                                flexShrink: 0,
-                            }}>{association.heroName?.[0]}</div>
-                        )}
+                        {/* Hero Image Removed as per request */}
 
                         <div style={{ flex: 1, paddingBottom: '4px' }}>
                             <div style={{
@@ -107,6 +88,9 @@ export default function FanPageClient({ association, members }: FanPageClientPro
                                     color: 'rgba(255,255,255,0.85)', fontSize: '0.9rem', fontWeight: 600,
                                 }}>
                                     <MapPin size={15} /> {association.areaName}
+                                    {association.town && `, ${association.town}`}
+                                    {association.district && `, ${association.district}`}
+                                    {association.state && `, ${association.state}`}
                                 </span>
                                 <span style={{
                                     display: 'flex', alignItems: 'center', gap: '5px',
@@ -303,23 +287,18 @@ export default function FanPageClient({ association, members }: FanPageClientPro
                 </div>
             )}
 
-            {/* Contact & Social */}
-            {(association.contactPhone || association.contactEmail || association.socialLinks) && (
+            {/* Contact & Social - Email removed as per request */}
+            {(association.contactPhone || association.socialLinks) && (
                 <div className="card animate-slide-up" style={{
                     padding: '24px', marginBottom: '24px', animationDelay: '0.5s',
                 }}>
                     <h3 style={{ fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Mail size={18} style={{ color: themeColor }} /> Contact
+                        <Phone size={18} style={{ color: themeColor }} /> Contact
                     </h3>
                     <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
                         {association.contactPhone && (
                             <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
                                 <Phone size={14} /> {association.contactPhone}
-                            </span>
-                        )}
-                        {association.contactEmail && (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
-                                <Mail size={14} /> {association.contactEmail}
                             </span>
                         )}
                     </div>

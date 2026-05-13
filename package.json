@@ -9,13 +9,15 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1045.0",
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.1.0",
     "express": "^5.2.1",
     "framer-motion": "^12.34.3",
     "ioredis": "^5.9.3",
     "lucide-react": "^0.575.0",
-    "mongoose": "^9.2.1",
+    "mongoose": "^9.6.2",
+    "mysql2": "^3.22.3",
     "next": "16.1.6",
     "next-auth": "^4.24.13",
     "nodemailer": "^7.0.13",
@@ -23,6 +25,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-hot-toast": "^2.6.0",
+    "sequelize": "^6.37.8",
+    "sharp": "^0.34.5",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
   },
@@ -33,6 +37,7 @@
     "@types/nodemailer": "^7.0.11",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sequelize": "^4.28.20",
     "cross-env": "^10.1.0",
     "docx": "^9.6.0",
     "eslint": "^9",

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import WithdrawRequest from '@/models/WithdrawRequest';
-import User from '@/models/User';
+import { WithdrawRequest, User } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -15,12 +14,18 @@ export async function GET(req: Request) {
         await connectDB();
 
         // Fetch all withdraw requests, populate the user making the request
-        const withdrawals = await WithdrawRequest.find()
-            .populate('user', 'name email phone')
-            .sort({ createdAt: -1 })
-            .lean();
+        const withdrawals = await WithdrawRequest.findAll({
+            order: [['createdAt', 'DESC']],
+            include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone'] }]
+        });
 
-        return NextResponse.json(withdrawals);
+        const result = withdrawals.map(w => {
+            const plain = w.toJSON() as any;
+            plain._id = plain.id;
+            return plain;
+        });
+
+        return NextResponse.json(result);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

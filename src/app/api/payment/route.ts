@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import Item from '@/models/Item';
-import Bid from '@/models/Bid';
+import { Item, Bid } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { validateFields } from '@/lib/profanityFilter';
@@ -26,7 +25,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const userId = (session.user as any).id;
+        const userId = parseInt((session.user as any).id);
         const { auctionId, shippingAddress } = await req.json();
 
         if (!auctionId) {
@@ -46,20 +45,20 @@ export async function POST(req: Request) {
 
         await connectDB();
 
-        const item = await Item.findById(auctionId);
+        const item = await Item.findByPk(auctionId);
         if (!item) {
             return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
         }
 
         // Save shipping address to the item
-        item.shippingAddress = {
+        item.shippingAddress = JSON.stringify({
             fullName: shippingAddress.fullName,
             phone: shippingAddress.phone,
             addressLine: shippingAddress.addressLine,
             city: shippingAddress.city,
             state: shippingAddress.state,
             pincode: shippingAddress.pincode,
-        };
+        });
         await item.save();
 
         if (item.status !== 'Completed') {
@@ -67,7 +66,7 @@ export async function POST(req: Request) {
         }
 
         // Check this user is the winner
-        if (!item.winner || item.winner.toString() !== userId) {
+        if (!item.winnerId || item.winnerId !== userId) {
             return NextResponse.json({ error: 'You are not the winner of this auction' }, { status: 403 });
         }
 
@@ -76,11 +75,11 @@ export async function POST(req: Request) {
         }
 
         // Calculate remaining amount
-        const winningAmount = item.finalAmount || item.currentPrice;
+        const winningAmount = Number(item.finalAmount) || Number(item.currentPrice);
 
         // Get the user's locked deposit for this auction
-        const userBids = await Bid.find({ item: item._id, user: userId });
-        const lockedDeposit = userBids.reduce((sum: number, b: any) => sum + (b.lockedDeposit || 0), 0);
+        const userBids = await Bid.findAll({ where: { itemId: item.id, userId } });
+        const lockedDeposit = userBids.reduce((sum: number, b: any) => sum + Number(b.lockedDeposit || 0), 0);
 
         const remainingAmount = Math.max(0, winningAmount - lockedDeposit);
 
@@ -92,7 +91,7 @@ export async function POST(req: Request) {
         const order = await getRazorpay().orders.create({
             amount: remainingAmount * 100,
             currency: 'INR',
-            receipt: `rb_${auctionId.slice(-8)}_${Date.now().toString(36)}`,
+            receipt: `rb_${auctionId.toString().slice(-8)}_${Date.now().toString(36)}`,
             notes: {
                 auctionId: auctionId,
                 userId: userId,

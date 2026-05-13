@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import WalletTransaction from '@/models/WalletTransaction';
+import { WalletTransaction, User, Item } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -26,24 +26,27 @@ export async function GET(req: Request) {
         const role = (session.user as any).role;
         const currentUserId = (session.user as any).id;
 
-        const filter: any = {};
+        const where: any = {};
 
         if (role === 'Admin') {
-            if (userId) filter.user = userId;
+            if (userId) where.userId = userId;
         } else {
-            filter.user = currentUserId;
+            where.userId = currentUserId;
         }
 
-        if (type) filter.type = type;
+        if (type) where.type = type;
 
-        const transactions = await WalletTransaction.find(filter)
-            .sort({ createdAt: -1 })
-            .limit(limit)
-            .populate('user', 'name email role')
-            .populate('auction', 'title')
-            .lean();
+        const transactions = await WalletTransaction.findAll({
+            where,
+            order: [['createdAt', 'DESC']],
+            limit,
+            include: [
+                { model: User, as: 'user', attributes: ['name', 'email', 'role'] },
+                { model: Item, as: 'auction', attributes: ['title'] }
+            ]
+        });
 
-        const total = await WalletTransaction.countDocuments(filter);
+        const total = await WalletTransaction.count({ where });
 
         return NextResponse.json({ transactions, total });
     } catch (error: any) {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
+import { User } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
         }
 
         await connectDB();
-        const existing = await User.findOne({ email });
+        const existing = await User.findOne({ where: { email } });
         if (existing) {
             return NextResponse.json({ error: 'Email already in use' }, { status: 400 });
         }
@@ -75,10 +75,12 @@ export async function PUT(req: Request) {
             updateData.password = await bcrypt.hash(password, 10);
         }
 
-        const user = await User.findByIdAndUpdate(userId, updateData, { new: true });
+        const user = await User.findByPk(userId);
         if (!user) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
+
+        await user.update(updateData);
 
         return NextResponse.json({ success: true, user });
     } catch (error: any) {
@@ -102,15 +104,17 @@ export async function DELETE(req: Request) {
         }
 
         // Prevent self-deletion
-        if (userId === (session.user as any).id) {
+        if (userId === (session.user as any).id.toString()) {
             return NextResponse.json({ error: 'Cannot delete your own account' }, { status: 400 });
         }
 
         await connectDB();
-        const deleted = await User.findByIdAndDelete(userId);
-        if (!deleted) {
+        const user = await User.findByPk(userId);
+        if (!user) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
+
+        await user.destroy();
 
         return NextResponse.json({ success: true });
     } catch (error: any) {

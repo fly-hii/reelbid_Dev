@@ -1,8 +1,8 @@
 import nodemailer from 'nodemailer';
 import connectDB from '@/lib/db';
-import Bid from '@/models/Bid';
-import User from '@/models/User';
-import Item from '@/models/Item';
+import { Bid, User, Item } from '@/models/index';
+import { Op, fn, col, literal } from 'sequelize';
+import { getSequelize } from '@/lib/mysql';
 
 const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_SERVER_HOST || 'smtp.example.com',
@@ -13,23 +13,27 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-export async function sendExtensionEmail(itemId: string) {
+export async function sendExtensionEmail(itemId: string | number) {
     try {
         await connectDB();
-        const item = await Item.findById(itemId);
+        const item = await Item.findByPk(itemId);
         if (!item) return;
 
-        // Get Top 10 previous bidders
-        const topBids = await Bid.aggregate([
-            { $match: { item: item._id } },
-            { $sort: { amount: -1 } },
-            { $group: { _id: "$user", amount: { $max: "$amount" } } },
-            { $sort: { amount: -1 } },
-            { $limit: 10 }
-        ]);
+        // Get Top 10 distinct bidders by max bid amount
+        const sequelize = getSequelize();
+        const topBidders = await Bid.findAll({
+            attributes: ['userId', [fn('MAX', col('amount')), 'maxAmount']],
+            where: { itemId: item.id },
+            group: ['userId'],
+            order: [[literal('maxAmount'), 'DESC']],
+            limit: 10,
+            raw: true,
+        });
 
-        const userIds = topBids.map(b => b._id);
-        const usersToNotify = await User.find({ _id: { $in: userIds } });
+        const userIds = topBidders.map((b: any) => b.userId);
+        if (userIds.length === 0) return;
+
+        const usersToNotify = await User.findAll({ where: { id: { [Op.in]: userIds } } });
 
         // Send emails
         for (const user of usersToNotify) {

@@ -1,15 +1,13 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
-import Tier from '@/models/Tier';
-import WalletTransaction from '@/models/WalletTransaction';
+import { User, Tier, WalletTransaction } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { assertWalletIntegrity, resignWallet } from '@/lib/walletIntegrity';
 
 // Helper: compute tier from dynamic tier settings
 async function computeTier(balance: number): Promise<string> {
-    const tiers = await Tier.find().sort({ minBalance: -1 }); // highest first
+    const tiers = await Tier.findAll({ order: [['minBalance', 'DESC']] }); // highest first
     for (const tier of tiers) {
         if (balance >= tier.minBalance) return tier.name;
     }
@@ -29,23 +27,25 @@ export async function GET(req: Request) {
         const limit = parseInt(searchParams.get('limit') || '20', 10);
 
         await connectDB();
-        const user = await User.findById((session.user as any).id);
+        const user = await User.findByPk((session.user as any).id);
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
         // All balance values come from DB only — never from client
         const result: any = {
-            balance: user.walletBalance,
-            lockedBalance: user.lockedBalance || 0,
-            availableBalance: user.walletBalance - (user.lockedBalance || 0),
+            balance: Number(user.walletBalance),
+            lockedBalance: Number(user.lockedBalance || 0),
+            availableBalance: Number(user.walletBalance) - Number(user.lockedBalance || 0),
             tier: user.tier,
         };
 
         if (includeTransactions) {
-            result.transactions = await WalletTransaction.find({ user: user._id })
-                .sort({ createdAt: -1 })
-                .limit(limit)
-                .populate('auction', 'title')
-                .lean();
+            const { Item } = await import('@/models/index');
+            result.transactions = await WalletTransaction.findAll({
+                where: { userId: user.id },
+                order: [['createdAt', 'DESC']],
+                limit,
+                include: [{ model: Item, as: 'auction', attributes: ['title'] }]
+            });
         }
 
         return NextResponse.json(result);
@@ -76,15 +76,15 @@ export async function POST(req: Request) {
         }
 
         await connectDB();
-        const user = await User.findById((session.user as any).id);
+        const user = await User.findByPk((session.user as any).id);
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
         // ── Verify wallet integrity BEFORE mutation ──
         assertWalletIntegrity(user);
 
         // Mutate the balance (server-side only, never trust client balance)
-        user.walletBalance += sanitizedAmount;
-        user.tier = await computeTier(user.walletBalance);
+        user.walletBalance = Number(user.walletBalance) + sanitizedAmount;
+        user.tier = await computeTier(Number(user.walletBalance));
 
         // ── Re-sign wallet hash after mutation ──
         resignWallet(user);
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
 
         // Record the credit transaction
         await WalletTransaction.create({
-            user: user._id,
+            userId: user.id,
             type: 'credit',
             amount: sanitizedAmount,
             description: `Wallet top-up of ₹${sanitizedAmount}`,
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
             success: true,
             balance: user.walletBalance,
             lockedBalance: user.lockedBalance || 0,
-            availableBalance: user.walletBalance - (user.lockedBalance || 0),
+            availableBalance: Number(user.walletBalance) - Number(user.lockedBalance || 0),
             tier: user.tier,
         });
     } catch (error: any) {

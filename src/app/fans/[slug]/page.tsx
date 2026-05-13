@@ -1,8 +1,8 @@
-
 import { Metadata } from 'next';
 import connectDB from '@/lib/db';
 import FanAssociation from '@/models/FanAssociation';
 import FanMember from '@/models/FanMember';
+import User from '@/models/User';
 import FanPageClient from './FanPageClient';
 
 interface Props {
@@ -12,7 +12,7 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { slug } = await params;
     await connectDB();
-    const association = await FanAssociation.findOne({ slug, isActive: true });
+    const association = await FanAssociation.findOne({ where: { slug, isActive: true } });
 
     if (!association) {
         return { title: 'Fan Association Not Found | ReelBid' };
@@ -35,9 +35,10 @@ export default async function FanPage({ params }: Props) {
     const { slug } = await params;
     await connectDB();
 
-    const association = await FanAssociation.findOne({ slug, isActive: true })
-        .populate('president', 'name email phone')
-        .lean();
+    const association: any = await FanAssociation.findOne({
+        where: { slug, isActive: true },
+        include: [{ model: User, as: 'president', attributes: ['id', 'name', 'email', 'phone'] }]
+    });
 
     if (!association) {
         return (
@@ -48,13 +49,19 @@ export default async function FanPage({ params }: Props) {
         );
     }
 
-    const members = await FanMember.find({ association: (association as any)._id })
-        .sort({ order: 1, createdAt: 1 })
-        .lean();
+    const members = await FanMember.findAll({
+        where: { associationId: association.id },
+        order: [['order', 'ASC'], ['createdAt', 'ASC']]
+    });
 
     // Serialize for client component
-    const serializedAssociation = JSON.parse(JSON.stringify(association));
-    const serializedMembers = JSON.parse(JSON.stringify(members));
+    const serializedAssociation = JSON.parse(JSON.stringify(association.get({ plain: true })));
+    serializedAssociation._id = serializedAssociation.id; // Map id to _id for frontend parity
+
+    const serializedMembers = members.map(m => {
+        const plain = m.get({ plain: true });
+        return { ...plain, _id: plain.id };
+    });
 
     return <FanPageClient association={serializedAssociation} members={serializedMembers} />;
 }

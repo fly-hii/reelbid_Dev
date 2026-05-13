@@ -1,23 +1,91 @@
-import mongoose from 'mongoose';
+import { DataTypes, Model, Optional } from 'sequelize';
+import { getSequelize } from '@/lib/mysql';
 
-const BidSchema = new mongoose.Schema(
-    {
-        amount: { type: Number, required: true },
-        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-        item: { type: mongoose.Schema.Types.ObjectId, ref: 'Item', required: true },
-        isTopBid: { type: Boolean, default: false },
-        lockedDeposit: { type: Number, default: 0 }, // security deposit locked for this bid
-        depositRefunded: { type: Boolean, default: false }, // has the deposit been refunded
-        status: {
-            type: String,
-            enum: ['active', 'outbid', 'won', 'lost', 'refunded'],
-            default: 'active',
+export interface BidAttributes {
+    id: number;
+    amount: number;
+    userId: number;
+    itemId: number;
+    isTopBid: boolean;
+    lockedDeposit: number;
+    depositRefunded: boolean;
+    status: 'active' | 'outbid' | 'won' | 'lost' | 'refunded';
+    createdAt?: Date;
+    updatedAt?: Date;
+}
+
+export interface BidCreationAttributes extends Optional<BidAttributes, 'id' | 'isTopBid' | 'lockedDeposit' | 'depositRefunded' | 'status'> {}
+
+export class Bid extends Model<BidAttributes, BidCreationAttributes> implements BidAttributes {
+    declare id: number;
+    declare amount: number;
+    declare userId: number;
+    declare itemId: number;
+    declare isTopBid: boolean;
+    declare lockedDeposit: number;
+    declare depositRefunded: boolean;
+    declare status: 'active' | 'outbid' | 'won' | 'lost' | 'refunded';
+    declare readonly createdAt: Date;
+    declare readonly updatedAt: Date;
+}
+
+export function initBidModel() {
+    const sequelize = getSequelize();
+
+    Bid.init(
+        {
+            id: {
+                type: DataTypes.INTEGER.UNSIGNED,
+                autoIncrement: true,
+                primaryKey: true,
+            },
+            amount: {
+                type: DataTypes.DECIMAL(12, 2),
+                allowNull: false,
+            },
+            userId: {
+                type: DataTypes.INTEGER.UNSIGNED,
+                allowNull: false,
+                references: { model: 'users', key: 'id' },
+            },
+            itemId: {
+                type: DataTypes.INTEGER.UNSIGNED,
+                allowNull: false,
+                references: { model: 'items', key: 'id' },
+            },
+            isTopBid: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false,
+            },
+            lockedDeposit: {
+                type: DataTypes.DECIMAL(12, 2),
+                allowNull: false,
+                defaultValue: 0,
+            },
+            depositRefunded: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false,
+            },
+            status: {
+                type: DataTypes.ENUM('active', 'outbid', 'won', 'lost', 'refunded'),
+                allowNull: false,
+                defaultValue: 'active',
+            },
         },
-    },
-    { timestamps: true }
-);
+        {
+            sequelize,
+            tableName: 'bids',
+            timestamps: true,
+            indexes: [
+                { fields: ['itemId', 'userId'] },
+                { fields: ['userId', 'status'] },
+            ],
+        }
+    );
 
-BidSchema.index({ item: 1, user: 1 });
-BidSchema.index({ user: 1, status: 1 });
+    return Bid;
+}
 
-export default mongoose.models.Bid || mongoose.model('Bid', BidSchema);
+export default Bid;

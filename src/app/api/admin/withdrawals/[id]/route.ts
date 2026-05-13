@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import WithdrawRequest from '@/models/WithdrawRequest';
-import User from '@/models/User';
-import WalletTransaction from '@/models/WalletTransaction';
+import { WithdrawRequest, User, WalletTransaction } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { assertWalletIntegrity, resignWallet } from '@/lib/walletIntegrity';
@@ -26,7 +24,7 @@ export async function PUT(
 
         await connectDB();
 
-        const withdrawal = await WithdrawRequest.findById(id).populate('user');
+        const withdrawal = await WithdrawRequest.findByPk(id, { include: [{ model: User, as: 'user' }] });
         if (!withdrawal) {
             return NextResponse.json({ error: 'Withdrawal request not found' }, { status: 404 });
         }
@@ -35,7 +33,7 @@ export async function PUT(
             return NextResponse.json({ error: `Withdrawal is already ${withdrawal.status}` }, { status: 400 });
         }
 
-        const user = await User.findById(withdrawal.user._id);
+        const user = await User.findByPk(withdrawal.userId);
         if (!user) {
             return NextResponse.json({ error: 'Associated user not found' }, { status: 404 });
         }
@@ -49,14 +47,14 @@ export async function PUT(
 
         if (status === 'rejected') {
             // Refund the user walletbalance (amount verified from DB withdrawal record, NOT client)
-            user.walletBalance += withdrawal.amount;
+            user.walletBalance = Number(user.walletBalance) + Number(withdrawal.amount);
 
             // ── Re-sign wallet hash after mutation ──
             resignWallet(user);
             await user.save();
 
             await WalletTransaction.create({
-                user: user._id,
+                userId: user.id,
                 type: 'credit',
                 amount: withdrawal.amount,
                 description: `Withdrawal request rejected by Admin. Amount refunded.`,
@@ -67,7 +65,10 @@ export async function PUT(
 
         await withdrawal.save();
 
-        return NextResponse.json({ success: true, withdrawal });
+        const plain = withdrawal.toJSON() as any;
+        plain._id = plain.id;
+
+        return NextResponse.json({ success: true, withdrawal: plain });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

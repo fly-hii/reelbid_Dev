@@ -21,7 +21,7 @@ function getSecret(): string {
  * Generate HMAC hash for a user's wallet state.
  * Signs: `userId|walletBalance|lockedBalance`
  */
-export function signWallet(userId: string, walletBalance: number, lockedBalance: number): string {
+export function signWallet(userId: string | number, walletBalance: number, lockedBalance: number): string {
     const payload = `${userId}|${walletBalance}|${lockedBalance}`;
     return crypto
         .createHmac('sha256', getSecret())
@@ -36,7 +36,7 @@ export function signWallet(userId: string, walletBalance: number, lockedBalance:
  * If walletHash is missing (legacy users before this feature), 
  * we treat it as valid but will re-sign on next mutation.
  */
-export function verifyWallet(userId: string, walletBalance: number, lockedBalance: number, storedHash?: string): boolean {
+export function verifyWallet(userId: string | number, walletBalance: number, lockedBalance: number, storedHash?: string): boolean {
     // Legacy user that doesn't have a hash yet — allow and will be signed on next mutation
     if (!storedHash) return true;
 
@@ -49,8 +49,8 @@ export function verifyWallet(userId: string, walletBalance: number, lockedBalanc
  * Call this before any wallet mutation.
  */
 export function assertWalletIntegrity(user: any): void {
-    const userId = user._id.toString();
-    const isValid = verifyWallet(userId, user.walletBalance, user.lockedBalance || 0, user.walletHash);
+    const userId = (user.id || user._id).toString();
+    const isValid = verifyWallet(userId, Number(user.walletBalance), Number(user.lockedBalance) || 0, user.walletHash);
     if (!isValid) {
         console.error(`[SECURITY] Wallet integrity check FAILED for user ${userId}. Balance may have been tampered.`);
         throw new Error('Wallet integrity verification failed. Please contact support.');
@@ -62,7 +62,8 @@ export function assertWalletIntegrity(user: any): void {
  * Call this after updating walletBalance or lockedBalance, before user.save().
  */
 export function resignWallet(user: any): string {
-    const hash = signWallet(user._id.toString(), user.walletBalance, user.lockedBalance || 0);
+    const userId = (user.id || user._id).toString();
+    const hash = signWallet(userId, Number(user.walletBalance), Number(user.lockedBalance) || 0);
     user.walletHash = hash;
     return hash;
 }

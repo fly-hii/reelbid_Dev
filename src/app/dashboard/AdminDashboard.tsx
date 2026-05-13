@@ -58,7 +58,7 @@ export default function AdminDashboard() {
     const [savingFan, setSavingFan] = useState(false);
     const [fanForm, setFanForm] = useState({
         presidentName: '', presidentEmail: '', presidentPassword: '', presidentPhone: '',
-        heroName: '', areaName: '', description: '', themeColor: '#8b5cf6'
+        heroName: '', areaName: '', state: '', district: '', town: '', description: '', themeColor: '#8b5cf6'
     });
     const [fanHeroImage, setFanHeroImage] = useState('');
     const [fanBannerImage, setFanBannerImage] = useState('');
@@ -384,6 +384,9 @@ export default function AdminDashboard() {
                         galleryImages: fanGalleryImages,
                         description: fanForm.description,
                         themeColor: fanForm.themeColor,
+                        state: fanForm.state,
+                        district: fanForm.district,
+                        town: fanForm.town,
                     })
                 });
                 const data = await res.json();
@@ -406,7 +409,7 @@ export default function AdminDashboard() {
             }
             setShowFanForm(false);
             setEditingFanId(null);
-            setFanForm({ presidentName: '', presidentEmail: '', presidentPassword: '', presidentPhone: '', heroName: '', areaName: '', description: '', themeColor: '#8b5cf6' });
+            setFanForm({ presidentName: '', presidentEmail: '', presidentPassword: '', presidentPhone: '', heroName: '', areaName: '', state: '', district: '', town: '', description: '', themeColor: '#8b5cf6' });
             setFanHeroImage('');
             setFanBannerImage('');
             setFanGalleryImages([]);
@@ -434,6 +437,7 @@ export default function AdminDashboard() {
         setFanForm({
             presidentName: '', presidentEmail: '', presidentPassword: '', presidentPhone: '',
             heroName: assoc.heroName || '', areaName: assoc.areaName || '',
+            state: assoc.state || '', district: assoc.district || '', town: assoc.town || '',
             description: assoc.description || '', themeColor: assoc.themeColor || '#8b5cf6',
         });
         setFanHeroImage(assoc.heroImage || '');
@@ -442,10 +446,17 @@ export default function AdminDashboard() {
         setShowFanForm(true);
     };
 
-    const handleImageUpload = (file: File, setter: (val: string) => void) => {
-        const reader = new FileReader();
-        reader.onloadend = () => setter(reader.result as string);
-        reader.readAsDataURL(file);
+    const handleImageUpload = async (file: File, setter: (val: string) => void) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            setter(data.url);
+        } catch (err: any) {
+            toast.error('Image upload failed: ' + err.message);
+        }
     };
 
     if (loading) {
@@ -829,21 +840,21 @@ export default function AdminDashboard() {
                                         </div>
                                         <div style={{ gridColumn: '1 / -1' }}>
                                             <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Upload Images</label>
-                                            <input type="file" multiple accept="image/*" className="input-field" onChange={(e) => {
+                                            <input type="file" multiple accept="image/*" className="input-field" onChange={async (e) => {
                                                 const files = Array.from(e.target.files || []).slice(0, 3);
-                                                const newImages: string[] = [];
-                                                let count = 0;
-                                                files.forEach(file => {
-                                                    const reader = new FileReader();
-                                                    reader.onloadend = () => {
-                                                        newImages.push(reader.result as string);
-                                                        count++;
-                                                        if (count === files.length) {
-                                                            setAuctionImages(prev => [...prev, ...newImages].slice(0, 3));
-                                                        }
-                                                    };
-                                                    reader.readAsDataURL(file);
-                                                });
+                                                try {
+                                                    const newUrls = await Promise.all(files.map(async (file) => {
+                                                        const formData = new FormData();
+                                                        formData.append('file', file);
+                                                        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                                                        const data = await res.json();
+                                                        if (!res.ok) throw new Error(data.error);
+                                                        return data.url;
+                                                    }));
+                                                    setAuctionImages(prev => [...prev, ...newUrls].slice(0, 3));
+                                                } catch (err: any) {
+                                                    toast.error('Upload failed: ' + err.message);
+                                                }
                                             }} />
                                             {auctionImages.length > 0 && (
                                                 <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
@@ -1233,7 +1244,7 @@ export default function AdminDashboard() {
                                 if (showFanForm) {
                                     setShowFanForm(false);
                                     setEditingFanId(null);
-                                    setFanForm({ presidentName: '', presidentEmail: '', presidentPassword: '', presidentPhone: '', heroName: '', areaName: '', description: '', themeColor: '#8b5cf6' });
+                                    setFanForm({ presidentName: '', presidentEmail: '', presidentPassword: '', presidentPhone: '', heroName: '', areaName: '', state: '', district: '', town: '', description: '', themeColor: '#8b5cf6' });
                                     setFanHeroImage('');
                                     setFanBannerImage('');
                                 } else {
@@ -1267,6 +1278,18 @@ export default function AdminDashboard() {
                                             <div>
                                                 <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Area Name *</label>
                                                 <input className="input-field" value={fanForm.areaName} onChange={e => setFanForm({ ...fanForm, areaName: e.target.value })} placeholder="e.g. Kakinada" required disabled={!!editingFanId} />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>State</label>
+                                                <input className="input-field" value={fanForm.state} onChange={e => setFanForm({ ...fanForm, state: e.target.value })} placeholder="e.g. Andhra Pradesh" />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>District</label>
+                                                <input className="input-field" value={fanForm.district} onChange={e => setFanForm({ ...fanForm, district: e.target.value })} placeholder="e.g. East Godavari" />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Town</label>
+                                                <input className="input-field" value={fanForm.town} onChange={e => setFanForm({ ...fanForm, town: e.target.value })} placeholder="e.g. Kakinada" />
                                             </div>
                                             <div>
                                                 <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Theme Color</label>
@@ -1335,21 +1358,21 @@ export default function AdminDashboard() {
                                         {editingFanId && (
                                             <div style={{ marginTop: '14px' }}>
                                                 <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Gallery Images (up to 6)</label>
-                                                <input type="file" multiple accept="image/*" className="input-field" onChange={(e) => {
+                                                <input type="file" multiple accept="image/*" className="input-field" onChange={async (e) => {
                                                     const files = Array.from(e.target.files || []).slice(0, 6);
-                                                    const newImages: string[] = [];
-                                                    let count = 0;
-                                                    files.forEach(file => {
-                                                        const reader = new FileReader();
-                                                        reader.onloadend = () => {
-                                                            newImages.push(reader.result as string);
-                                                            count++;
-                                                            if (count === files.length) {
-                                                                setFanGalleryImages(prev => [...prev, ...newImages].slice(0, 6));
-                                                            }
-                                                        };
-                                                        reader.readAsDataURL(file);
-                                                    });
+                                                    try {
+                                                        const newUrls = await Promise.all(files.map(async (file) => {
+                                                            const formData = new FormData();
+                                                            formData.append('file', file);
+                                                            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                                                            const data = await res.json();
+                                                            if (!res.ok) throw new Error(data.error);
+                                                            return data.url;
+                                                        }));
+                                                        setFanGalleryImages(prev => [...prev, ...newUrls].slice(0, 6));
+                                                    } catch (err: any) {
+                                                        toast.error('Upload failed: ' + err.message);
+                                                    }
                                                 }} />
                                                 {fanGalleryImages.length > 0 && (
                                                     <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>

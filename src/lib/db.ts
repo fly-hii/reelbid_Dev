@@ -1,30 +1,20 @@
-import mongoose from 'mongoose';
+import { connectMySQL, getSequelize } from './mysql';
+import { initAllModels } from '@/models/index';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/reelbid';
-
-let cached = (global as any).mongoose;
-
-if (!cached) {
-    cached = (global as any).mongoose = { conn: null, promise: null };
-}
+let synced = false;
 
 async function connectDB() {
-    if (cached.conn) {
-        return cached.conn;
-    }
+    await connectMySQL();
+    initAllModels();
 
-    if (!cached.promise) {
-        const opts = {
-            bufferCommands: false,
-        };
-
-        cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-            console.log('MongoDB connected successfully');
-            return mongoose;
-        });
+    if (!synced) {
+        const sequelize = getSequelize();
+        // Use alter:true in development to auto-update tables
+        // Use force:false to avoid dropping tables
+        await sequelize.sync({ alter: true });
+        console.log('MySQL tables synced');
+        synced = true;
     }
-    cached.conn = await cached.promise;
-    return cached.conn;
 }
 
 export default connectDB;

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
+import { User } from '@/models/index';
 
 // In-memory OTP store for sign-in (separate from registration)
 export const signinOtpStore = new Map<string, { otp: string; expiresAt: number }>();
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
         await connectDB();
 
         // User must exist to sign in via OTP
-        const existingUser = await User.findOne({ email });
+        const existingUser = await User.findOne({ where: { email } });
         if (!existingUser) {
             return NextResponse.json({ error: 'No account found with this email' }, { status: 404 });
         }

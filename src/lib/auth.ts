@@ -2,7 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import connectDB from "@/lib/db";
-import UserWrapper from "@/models/User";
+import { User } from "@/models/index";
 
 export const authOptions: NextAuthOptions = {
     providers: [
@@ -22,10 +22,10 @@ export const authOptions: NextAuthOptions = {
                     throw new Error("Invalid credentials");
                 }
 
-                let user = await UserWrapper.findOne({ email: credentials.email });
+                let user = await User.findOne({ where: { email: credentials.email } });
 
                 if (!user) {
-                    user = await UserWrapper.create({
+                    user = await User.create({
                         name: credentials.email.split('@')[0],
                         email: credentials.email,
                         role: 'Buyer',
@@ -36,7 +36,7 @@ export const authOptions: NextAuthOptions = {
                 }
 
                 return {
-                    id: user._id.toString(),
+                    id: user.id.toString(),
                     name: user.name,
                     email: user.email,
                     role: user.role,
@@ -50,9 +50,9 @@ export const authOptions: NextAuthOptions = {
             if (account?.provider === "google") {
                 if (!user.email) return false;
                 await connectDB();
-                let dbUser = await UserWrapper.findOne({ email: user.email });
+                let dbUser = await User.findOne({ where: { email: user.email } });
                 if (!dbUser) {
-                    dbUser = await UserWrapper.create({
+                    dbUser = await User.create({
                         name: user.name || user.email.split('@')[0],
                         email: user.email,
                         image: user.image || '',
@@ -62,7 +62,7 @@ export const authOptions: NextAuthOptions = {
                         profileCompleted: false,
                     });
                 }
-                user.id = dbUser._id.toString();
+                user.id = dbUser.id.toString();
                 (user as any).role = dbUser.role;
                 (user as any).profileCompleted = dbUser.profileCompleted ?? false;
             }
@@ -85,7 +85,7 @@ export const authOptions: NextAuthOptions = {
             // Allow session updates (e.g. after profile completion)
             if (trigger === 'update') {
                 await connectDB();
-                const dbUser = await UserWrapper.findById(token.id);
+                const dbUser = await User.findByPk(token.id as string);
                 if (dbUser) {
                     token.profileCompleted = dbUser.profileCompleted;
                     token.role = dbUser.role;

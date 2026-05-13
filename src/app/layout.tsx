@@ -6,6 +6,7 @@ import { Toaster } from "react-hot-toast";
 import Navbar from "@/components/Navbar";
 import ProfanityGuard from "@/components/ProfanityGuard";
 import ProfanityCheckProvider from "@/components/ProfanityCheckProvider";
+import TranslateWidget from "@/components/TranslateWidget";
 
 const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800", "900"] });
 
@@ -29,6 +30,7 @@ export default function RootLayout({
           <Navbar />
           <ProfanityGuard />
           <ProfanityCheckProvider />
+          <TranslateWidget />
           <main style={{
             maxWidth: '1280px',
             margin: '0 auto',

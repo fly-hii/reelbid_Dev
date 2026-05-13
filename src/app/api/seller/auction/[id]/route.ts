@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import Item from '@/models/Item';
-import Bid from '@/models/Bid';
-import User from '@/models/User';
+import { Item, Bid, User } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { fn, col, literal } from 'sequelize';
 
 /**
  * GET /api/seller/auction/[id]
@@ -22,93 +21,103 @@ export async function GET(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const userId = (session.user as any).id;
+        const userId = parseInt((session.user as any).id);
         const role = (session.user as any).role;
 
         await connectDB();
 
-        const item = await Item.findById(id)
-            .populate('winner', 'name email phone image address city state pincode')
-            .populate('seller', 'name email')
-            .populate('highestBidder', 'name email phone image address city state pincode');
+        const item = await Item.findByPk(id, {
+            include: [
+                { model: User, as: 'winner', attributes: ['id', 'name', 'email', 'phone', 'image', 'address', 'city', 'state', 'pincode'] },
+                { model: User, as: 'seller', attributes: ['id', 'name', 'email'] },
+                { model: User, as: 'highestBidder', attributes: ['id', 'name', 'email', 'phone', 'image', 'address', 'city', 'state', 'pincode'] }
+            ]
+        });
 
         if (!item) {
             return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
         }
 
         // Only seller or admin can access
-        if (role !== 'Admin' && item.seller._id.toString() !== userId) {
+        if (role !== 'Admin' && item.sellerId !== userId) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
         // Get top 5 unique bidders (highest bid per user)
-        const topBids = await Bid.aggregate([
-            { $match: { item: item._id } },
-            { $sort: { amount: -1 } },
-            {
-                $group: {
-                    _id: '$user',
-                    highestBid: { $max: '$amount' },
-                    bidCount: { $sum: 1 },
-                    latestBid: { $first: '$createdAt' },
-                    lockedDeposit: { $sum: '$lockedDeposit' },
-                    status: { $first: '$status' },
-                }
-            },
-            { $sort: { highestBid: -1 } },
-            { $limit: 5 },
-        ]);
+        const topBids = await Bid.findAll({
+            attributes: [
+                'userId',
+                [fn('MAX', col('amount')), 'highestBid'],
+                [fn('COUNT', col('id')), 'bidCount'],
+                [fn('MIN', col('createdAt')), 'latestBid'],
+                [fn('SUM', col('lockedDeposit')), 'lockedDeposit'],
+                [fn('MAX', col('status')), 'status']
+            ],
+            where: { itemId: item.id },
+            group: ['userId'],
+            order: [[literal('highestBid'), 'DESC']],
+            limit: 5,
+            raw: true
+        });
 
         // Populate user details for top bidders
-        const userIds = topBids.map(b => b._id);
-        const users = await User.find({ _id: { $in: userIds } })
-            .select('name email phone image address city state pincode')
-            .lean();
+        const userIds = topBids.map((b: any) => b.userId);
+        const { Op } = await import('sequelize');
+        const users = await User.findAll({
+            where: { id: { [Op.in]: userIds } },
+            attributes: ['id', 'name', 'email', 'phone', 'image', 'address', 'city', 'state', 'pincode'],
+            raw: true
+        });
 
         const userMap: Record<string, any> = {};
-        users.forEach(u => { userMap[(u as any)._id.toString()] = u; });
+        users.forEach((u: any) => { 
+            const plain = { ...u, _id: u.id };
+            userMap[u.id.toString()] = plain; 
+        });
 
-        const topBidders = topBids.map((bid, index) => ({
+        const topBidders = topBids.map((bid: any, index) => ({
             rank: index + 1,
-            user: userMap[bid._id.toString()] || { name: 'Unknown', email: '' },
-            highestBid: bid.highestBid,
-            bidCount: bid.bidCount,
+            user: userMap[bid.userId.toString()] || { name: 'Unknown', email: '' },
+            highestBid: Number(bid.highestBid),
+            bidCount: Number(bid.bidCount),
             latestBid: bid.latestBid,
-            lockedDeposit: bid.lockedDeposit,
+            lockedDeposit: Number(bid.lockedDeposit),
             status: bid.status,
-            isWinner: item.winner && bid._id.toString() === item.winner._id?.toString(),
+            isWinner: item.winnerId && bid.userId === item.winnerId,
         }));
 
         // Calculate remaining amount for winner
-        const winnerBidder = topBidders.find(b => b.isWinner);
+        const winnerBidder = topBidders.find((b: any) => b.isWinner);
         const remainingAmount = winnerBidder
             ? winnerBidder.highestBid - winnerBidder.lockedDeposit
             : 0;
 
+        const plainItem = item.toJSON() as any;
+
         return NextResponse.json({
             auction: {
-                _id: item._id,
-                title: item.title,
-                description: item.description,
-                images: item.images,
-                category: item.category,
-                startingPrice: item.startingPrice,
-                currentPrice: item.currentPrice,
-                finalAmount: item.finalAmount,
-                status: item.status,
-                startDate: item.startDate,
-                endDate: item.endDate,
-                bidCount: item.bidCount,
-                securityPercentage: item.securityPercentage,
-                winner: item.winner,
-                winnerPaymentStatus: item.winnerPaymentStatus || 'pending',
-                paymentMethod: item.paymentMethod,
-                paymentCompletedAt: item.paymentCompletedAt,
-                secondChanceStatus: item.secondChanceStatus || 'closed',
-                secondChanceNotifiedAt: item.secondChanceNotifiedAt,
-                secondChanceOffers: item.secondChanceOffers || [],
-                shippingAddress: item.shippingAddress || null,
-                lastPaymentReminder: item.lastPaymentReminder,
+                _id: plainItem.id,
+                title: plainItem.title,
+                description: plainItem.description,
+                images: item.imagesArray,
+                category: plainItem.category,
+                startingPrice: plainItem.startingPrice,
+                currentPrice: plainItem.currentPrice,
+                finalAmount: plainItem.finalAmount,
+                status: plainItem.status,
+                startDate: plainItem.startDate,
+                endDate: plainItem.endDate,
+                bidCount: plainItem.bidCount,
+                securityPercentage: plainItem.securityPercentage,
+                winner: plainItem.winner,
+                winnerPaymentStatus: plainItem.winnerPaymentStatus || 'pending',
+                paymentMethod: plainItem.paymentMethod,
+                paymentCompletedAt: plainItem.paymentCompletedAt,
+                secondChanceStatus: plainItem.secondChanceStatus || 'closed',
+                secondChanceNotifiedAt: plainItem.secondChanceNotifiedAt,
+                secondChanceOffers: item.secondChanceOffersArray || [],
+                shippingAddress: item.shippingAddressObj || null,
+                lastPaymentReminder: plainItem.lastPaymentReminder,
             },
             topBidders,
             remainingAmount,

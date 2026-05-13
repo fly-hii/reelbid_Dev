@@ -3,43 +3,75 @@ import connectDB from '@/lib/db';
 import User from '@/models/User';
 import Item from '@/models/Item';
 import Bid from '@/models/Bid';
+import { getSequelize } from '@/lib/mysql';
+import { Op } from 'sequelize';
 
 export async function GET() {
     try {
         await connectDB();
+        const sequelize = getSequelize();
 
         // 1. Total Auctions Won
-        const winners = await Item.aggregate([
-            { $match: { status: 'Completed', winner: { $exists: true, $ne: null } } },
-            { $group: { _id: '$winner', wins: { $sum: 1 }, totalSpent: { $sum: '$finalAmount' } } },
-            { $sort: { wins: -1 } },
-            { $limit: 10 }
-        ]);
+        const winners = await Item.findAll({
+            where: {
+                status: 'Completed',
+                winnerId: { [Op.ne]: null }
+            },
+            attributes: [
+                'winnerId',
+                [sequelize.fn('COUNT', sequelize.col('Item.id')), 'wins'],
+                [sequelize.fn('SUM', sequelize.col('Item.finalAmount')), 'totalSpent']
+            ],
+            group: ['winnerId', 'winner.id'],
+            order: [[sequelize.literal('wins'), 'DESC']],
+            limit: 10,
+            include: [{ model: User, as: 'winner', attributes: ['id', 'name', 'image'] }]
+        });
 
-        const populatedWinners = await User.populate(winners, { path: '_id', select: 'name image' });
+        const formattedWinners = winners.map((w: any) => ({
+            _id: w.winner,
+            wins: parseInt(w.getDataValue('wins')),
+            totalSpent: parseFloat(w.getDataValue('totalSpent'))
+        }));
 
         // 2. Most Active Bidders (Highest number of bids across platform)
-        const activeBidders = await Bid.aggregate([
-            { $group: { _id: '$user', totalBids: { $sum: 1 } } },
-            { $sort: { totalBids: -1 } },
-            { $limit: 10 }
-        ]);
+        const activeBidders = await Bid.findAll({
+            attributes: [
+                'userId',
+                [sequelize.fn('COUNT', sequelize.col('Bid.id')), 'totalBids']
+            ],
+            group: ['userId', 'user.id'],
+            order: [[sequelize.literal('totalBids'), 'DESC']],
+            limit: 10,
+            include: [{ model: User, as: 'user', attributes: ['id', 'name', 'image'] }]
+        });
 
-        const populatedActiveBidders = await User.populate(activeBidders, { path: '_id', select: 'name image' });
+        const formattedActiveBidders = activeBidders.map((b: any) => ({
+            _id: b.user,
+            totalBids: parseInt(b.getDataValue('totalBids'))
+        }));
 
         // 3. Highest Single Bid Amount
-        const highestBids = await Bid.aggregate([
-            { $group: { _id: '$user', highestBid: { $max: '$amount' } } },
-            { $sort: { highestBid: -1 } },
-            { $limit: 10 }
-        ]);
+        const highestBids = await Bid.findAll({
+            attributes: [
+                'userId',
+                [sequelize.fn('MAX', sequelize.col('Bid.amount')), 'highestBid']
+            ],
+            group: ['userId', 'user.id'],
+            order: [[sequelize.literal('highestBid'), 'DESC']],
+            limit: 10,
+            include: [{ model: User, as: 'user', attributes: ['id', 'name', 'image'] }]
+        });
 
-        const populatedHighestBids = await User.populate(highestBids, { path: '_id', select: 'name image' });
+        const formattedHighestBids = highestBids.map((b: any) => ({
+            _id: b.user,
+            highestBid: parseFloat(b.getDataValue('highestBid'))
+        }));
 
         return NextResponse.json({
-            winners: populatedWinners,
-            activeBidders: populatedActiveBidders,
-            highestBids: populatedHighestBids
+            winners: formattedWinners,
+            activeBidders: formattedActiveBidders,
+            highestBids: formattedHighestBids
         });
     } catch (error: any) {
         console.error('Leaderboard API Error:', error);

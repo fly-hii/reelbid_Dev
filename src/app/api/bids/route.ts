@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
-import Item from '@/models/Item';
-import Bid from '@/models/Bid';
-import WalletTransaction from '@/models/WalletTransaction';
+import { User, Item, Bid, WalletTransaction } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { sendExtensionEmail } from '@/lib/emails';
 import { assertWalletIntegrity, resignWallet } from '@/lib/walletIntegrity';
+import { Op } from 'sequelize';
 
 // GET top bids for an item
 export async function GET(req: Request) {
@@ -21,18 +19,28 @@ export async function GET(req: Request) {
 
         // If userId provided, return that user's bids across all auctions
         if (userId) {
-            const bids = await Bid.find({ user: userId })
-                .sort({ createdAt: -1 })
-                .populate('item', 'title images currentPrice endDate status securityPercentage')
-                .lean();
+            const bids = await Bid.findAll({
+                where: { userId },
+                order: [['createdAt', 'DESC']],
+                include: [
+                    { model: Item, as: 'item', attributes: ['id', 'title', 'images', 'currentPrice', 'endDate', 'status', 'securityPercentage'] }
+                ]
+            });
 
             const enhancedBids = await Promise.all(bids.map(async (bid: any) => {
-                const higherBidsCount = await Bid.countDocuments({
-                    item: bid.item._id,
-                    amount: { $gt: bid.amount }
+                const b = bid.toJSON();
+                if (b.item && b.item.images) {
+                    try { b.item.images = JSON.parse(b.item.images); } catch {}
+                }
+                const higherBidsCount = await Bid.count({
+                    where: {
+                        itemId: bid.itemId,
+                        amount: { [Op.gt]: bid.amount }
+                    }
                 });
                 return {
-                    ...bid,
+                    ...b,
+                    item: { ...b.item, _id: b.item?.id },
                     position: higherBidsCount + 1
                 };
             }));
@@ -44,13 +52,22 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'itemId is required' }, { status: 400 });
         }
 
-        const bids = await Bid.find({ item: itemId })
-            .sort({ amount: -1 })
-            .limit(limit)
-            .populate('user', 'name image')
-            .lean();
+        const bids = await Bid.findAll({
+            where: { itemId },
+            order: [['amount', 'DESC']],
+            limit,
+            include: [
+                { model: User, as: 'user', attributes: ['id', 'name', 'image'] }
+            ]
+        });
 
-        return NextResponse.json(bids);
+        const result = bids.map((b: any) => {
+            const plain = b.toJSON();
+            plain.user._id = plain.user.id;
+            return plain;
+        });
+
+        return NextResponse.json(result);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -66,7 +83,7 @@ export async function POST(req: Request) {
         const { itemId, amount } = await req.json();
         await connectDB();
 
-        const user = await User.findById((session.user as any).id);
+        const user = await User.findByPk((session.user as any).id);
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
         // ── Verify wallet integrity before any balance operation ──
@@ -76,10 +93,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Only buyers can place bids' }, { status: 403 });
         }
 
-        const item = await Item.findById(itemId);
+        const item = await Item.findByPk(itemId);
         if (!item) return NextResponse.json({ error: 'Item not found' }, { status: 404 });
 
-        if (item.seller.toString() === user._id.toString()) {
+        if (item.sellerId.toString() === user.id.toString()) {
             return NextResponse.json({ error: 'Sellers cannot bid on their own items' }, { status: 403 });
         }
 
@@ -101,11 +118,14 @@ export async function POST(req: Request) {
         }
 
         // Find what this buyer already has locked on THIS auction
-        const existingBidsOnItem = await Bid.find({
-            item: item._id,
-            user: user._id,
-            depositRefunded: false,
-        }).sort({ createdAt: 1 });
+        const existingBidsOnItem = await Bid.findAll({
+            where: {
+                itemId: item.id,
+                userId: user.id,
+                depositRefunded: false,
+            },
+            order: [['createdAt', 'ASC']]
+        });
 
         // ========================================
         // DYNAMIC DEPOSIT CALCULATION
@@ -149,11 +169,11 @@ export async function POST(req: Request) {
         }
 
         const alreadyLocked = existingBidsOnItem.reduce(
-            (sum: number, b: any) => sum + (b.lockedDeposit || 0), 0
+            (sum: number, b: any) => sum + Number(b.lockedDeposit || 0), 0
         );
 
         const additionalNeeded = Math.max(0, requiredDeposit - alreadyLocked);
-        const availableBalance = user.walletBalance - (user.lockedBalance || 0);
+        const availableBalance = Number(user.walletBalance) - Number(user.lockedBalance || 0);
 
         if (additionalNeeded > 0 && additionalNeeded > availableBalance) {
             return NextResponse.json({
@@ -165,18 +185,18 @@ export async function POST(req: Request) {
         // LOCK THE ADDITIONAL DEPOSIT
         // ========================================
         if (additionalNeeded > 0) {
-            user.lockedBalance = (user.lockedBalance || 0) + additionalNeeded;
+            user.lockedBalance = Number(user.lockedBalance || 0) + additionalNeeded;
             // ── Re-sign wallet hash after locking ──
             resignWallet(user);
             await user.save();
 
             // record the lock transaction
             await WalletTransaction.create({
-                user: user._id,
+                userId: user.id,
                 type: 'lock',
                 amount: additionalNeeded,
                 description: `Security deposit locked for bid ₹${amount} on "${item.title}"`,
-                auction: item._id,
+                auctionId: item.id,
                 balanceAfter: user.walletBalance,
                 lockedAfter: user.lockedBalance,
             });
@@ -195,9 +215,9 @@ export async function POST(req: Request) {
         // ========================================
         // MARK PREVIOUS TOP BID AS OUTBID
         // ========================================
-        await Bid.updateMany(
-            { item: item._id, isTopBid: true },
-            { isTopBid: false, status: 'outbid' }
+        await Bid.update(
+            { isTopBid: false, status: 'outbid' },
+            { where: { itemId: item.id, isTopBid: true } }
         );
 
         // ========================================
@@ -205,8 +225,8 @@ export async function POST(req: Request) {
         // ========================================
         const bid = await Bid.create({
             amount,
-            user: user._id,
-            item: item._id,
+            userId: user.id,
+            itemId: item.id,
             isTopBid: true,
             lockedDeposit: additionalNeeded, // only the newly locked amount for this bid
             status: 'active',
@@ -214,14 +234,14 @@ export async function POST(req: Request) {
 
         // Update item
         item.currentPrice = amount;
-        item.highestBidder = user._id;
+        item.highestBidderId = user.id;
         item.bidCount = (item.bidCount || 0) + 1;
         await item.save();
 
         // Trigger Notification if extended
         if (extended) {
             try {
-                await sendExtensionEmail(item._id.toString());
+                await sendExtensionEmail(item.id);
             } catch (err) {
                 console.error('Email failed to send:', err);
             }
@@ -234,7 +254,7 @@ export async function POST(req: Request) {
                 itemId,
                 newPrice: item.currentPrice,
                 endDate: item.endDate,
-                highestBidderId: user._id,
+                highestBidderId: user.id,
                 bidCount: item.bidCount,
             });
         }

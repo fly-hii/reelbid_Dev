@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import Item from '@/models/Item';
-import Bid from '@/models/Bid';
-import User from '@/models/User';
+import { Item, Bid, User } from '@/models/index';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import nodemailer from 'nodemailer';
+import { fn, col, literal } from 'sequelize';
 
 const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_SERVER_HOST || 'smtp.example.com',
@@ -32,19 +31,18 @@ export async function POST(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const sellerId = (session.user as any).id;
+        const sellerId = parseInt((session.user as any).id);
         const role = (session.user as any).role;
 
         await connectDB();
 
-        const item = await Item.findById(id)
-            .populate('seller', 'name email');
+        const item = await Item.findByPk(id, { include: [{ model: User, as: 'seller' }] });
 
         if (!item) {
             return NextResponse.json({ error: 'Auction not found' }, { status: 404 });
         }
 
-        if (role !== 'Admin' && item.seller._id.toString() !== sellerId) {
+        if (role !== 'Admin' && item.sellerId !== sellerId) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
@@ -53,25 +51,24 @@ export async function POST(
         }
 
         // Get winning bid amount
-        const winningAmount = item.finalAmount || item.currentPrice;
+        const winningAmount = Number(item.finalAmount) || Number(item.currentPrice);
 
-        // Get top 5 unique bidders, skip the winner (rank 1)
-        const topBids = await Bid.aggregate([
-            { $match: { item: item._id } },
-            { $sort: { amount: -1 } },
-            {
-                $group: {
-                    _id: '$user',
-                    highestBid: { $max: '$amount' },
-                }
-            },
-            { $sort: { highestBid: -1 } },
-            { $limit: 5 },
-        ]);
+        // Get top 5 unique bidders
+        const topBids = await Bid.findAll({
+            attributes: [
+                'userId',
+                [fn('MAX', col('amount')), 'highestBid']
+            ],
+            where: { itemId: item.id },
+            group: ['userId'],
+            order: [[literal('highestBid'), 'DESC']],
+            limit: 5,
+            raw: true
+        });
 
         // Filter out the winner
         const runnerUpBids = topBids.filter(
-            b => !item.winner || b._id.toString() !== item.winner.toString()
+            (b: any) => !item.winnerId || b.userId !== item.winnerId
         ).slice(0, 4);
 
         if (runnerUpBids.length === 0) {
@@ -79,15 +76,16 @@ export async function POST(
         }
 
         // Get user details
-        const userIds = runnerUpBids.map(b => b._id);
-        const users = await User.find({ _id: { $in: userIds } }).select('name email').lean();
+        const userIds = runnerUpBids.map((b: any) => b.userId);
+        const { Op } = await import('sequelize');
+        const users = await User.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ['id', 'name', 'email'], raw: true });
         const userMap: Record<string, any> = {};
-        users.forEach(u => { userMap[(u as any)._id.toString()] = u; });
+        users.forEach((u: any) => { userMap[u.id.toString()] = u; });
 
         // Send emails to all runner-ups
         const sentTo: string[] = [];
         for (const bid of runnerUpBids) {
-            const user = userMap[bid._id.toString()];
+            const user = userMap[bid.userId.toString()];
             if (!user || !user.email) continue;
 
             const minPrice = Math.round(winningAmount * 0.95);
@@ -126,7 +124,7 @@ export async function POST(
                                 Log in to select your price (±5% of the winning bid) and submit your offer to the seller.
                             </p>
                             <div style="margin-top: 24px; text-align: center;">
-                                <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/auctions/${item._id}?secondChance=true"
+                                <a href="${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/auctions/${item.id}?secondChance=true"
                                    style="display: inline-block; background: #7c3aed; color: white; padding: 14px 32px; border-radius: 12px; text-decoration: none; font-weight: 700;">
                                     Submit Your Offer →
                                 </a>

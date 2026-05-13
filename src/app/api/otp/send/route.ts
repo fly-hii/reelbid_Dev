@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
+import { User } from '@/models/index';
 
 // In-memory OTP store (use Redis/DB in production)
 // Exported so the verify route can access it
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
         await connectDB();
 
         // Check if user already exists
-        const existingUser = await User.findOne({ email });
+        const existingUser = await User.findOne({ where: { email } });
         if (existingUser) {
             return NextResponse.json({ error: 'An account with this email already exists' }, { status: 409 });
         }

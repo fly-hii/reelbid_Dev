@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import User from '@/models/User';
+import { User } from '@/models/index';
 import { containsProfanity } from '@/lib/profanityFilter';
+import bcrypt from 'bcryptjs';
 
 export async function POST(req: Request) {
     try {
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
         await connectDB();
 
         // Check if user already exists
-        const existingUser = await User.findOne({ email });
+        const existingUser = await User.findOne({ where: { email } });
         if (existingUser) {
             return NextResponse.json({ error: 'An account with this email already exists' }, { status: 409 });
         }
@@ -38,12 +39,13 @@ export async function POST(req: Request) {
             role: 'Buyer',
             tier: 'None',
             walletBalance: 0,
+            lockedBalance: 0,
             profileCompleted: false,
         };
 
         // Only set password if provided (password method)
         if (password) {
-            userData.password = password; // In production, hash this with bcrypt
+            userData.password = await bcrypt.hash(password, 10);
         }
 
         const user = await User.create(userData);
@@ -51,7 +53,7 @@ export async function POST(req: Request) {
         return NextResponse.json({
             success: true,
             user: {
-                id: user._id,
+                id: user.id,
                 name: user.name,
                 email: user.email,
                 role: user.role,
